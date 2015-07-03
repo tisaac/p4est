@@ -356,7 +356,7 @@ p4est_new_points (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   }
 
   /* compute some member variables */
-  p4est->global_first_quadrant = P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
+  p4est->global_first_quadrant = NULL;
   p4est_comm_count_quadrants (p4est);
 
   /* print more statistics */

@@ -31,6 +31,7 @@
 #ifdef P4EST_HAVE_ZLIB
 #include <zlib.h>
 #endif
+#include <sc_allgather.h>
 
 void
 p4est_comm_count_quadrants (p4est_t * p4est)
@@ -42,15 +43,12 @@ p4est_comm_count_quadrants (p4est_t * p4est)
   const int           num_procs = p4est->mpisize;
 
   global_first_quadrant[0] = 0;
-  mpiret = sc_MPI_Allgather (&qlocal, 1, P4EST_MPI_GLOIDX,
-                             global_first_quadrant + 1, 1, P4EST_MPI_GLOIDX,
-                             p4est->mpicomm);
-  SC_CHECK_MPI (mpiret);
-
-  for (i = 0; i < num_procs; ++i) {
-    global_first_quadrant[i + 1] += global_first_quadrant[i];
+  if (global_first_quadrant != NULL) {
+    sc_allgather_final_destroy(global_first_quadrant,p4est->mpicomm);
   }
-  p4est->global_num_quadrants = global_first_quadrant[num_procs];
+  sc_allgather_final_scan_create(&glocal, (void **) &global_first_quadrant, 1,
+                                 P4EST_MPI_GLOIDX, sc_MPI_SUM, p4est->mpicomm);
+  p4est->global_first_quadrant = global_first_quadrant;
 }
 
 void

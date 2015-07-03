@@ -436,7 +436,8 @@ p4est_new_ext (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   /* compute some member variables */
   p4est->first_local_tree = first_tree;
   p4est->last_local_tree = last_tree;
-  p4est->global_first_quadrant = P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
+  p4est->global_first_quadrant = NULL;
+#if 0
   if (!fill_uniform && level > 0) {
     /* this performs an allgather to count all quadrants */
     p4est_comm_count_quadrants (p4est);
@@ -449,6 +450,9 @@ p4est_new_ext (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
     }
     p4est->global_num_quadrants = global_num_quadrants;
   }
+#else
+  p4est_comm_count_quadrants (p4est);
+#endif
 
   /* fill in global partition information */
   global_first_position = P4EST_ALLOC_ZERO (p4est_quadrant_t, num_procs + 1);
@@ -509,7 +513,7 @@ p4est_destroy (p4est_t * p4est)
   }
   sc_mempool_destroy (p4est->quadrant_pool);
 
-  P4EST_FREE (p4est->global_first_quadrant);
+  sc_allgather_final_destroy (p4est->global_first_quadrant, p4est->mpicomm);
   P4EST_FREE (p4est->global_first_position);
   P4EST_FREE (p4est);
 }

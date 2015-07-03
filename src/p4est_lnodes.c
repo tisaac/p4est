@@ -34,6 +34,7 @@
 #include <p8est_ghost.h>
 #include <p8est_lnodes.h>
 #endif
+#include <sc_allgather.h>
 
 #ifndef P4_TO_P8
 #define P4EST_LN_C_OFFSET 4
@@ -2339,20 +2340,15 @@ p4est_lnodes_global_and_sharers (p4est_lnodes_data_t * data,
   p4est_locidx_t      gidx;
   sc_array_t         *shared_nodes;
   p4est_locidx_t     *global_num_indep;
-  p4est_gloidx_t     *global_offsets = P4EST_ALLOC (p4est_gloidx_t,
-                                                    mpisize + 1);
+  p4est_gloidx_t     *global_offsets, gowned_count = owned_count;
   p4est_locidx_t     *poff = data->poff;
 
-  global_num_indep = lnodes->global_owned_count = P4EST_ALLOC (p4est_locidx_t,
-                                                               mpisize);
-  sc_MPI_Allgather (&owned_count, 1, P4EST_MPI_LOCIDX, global_num_indep, 1,
-                    P4EST_MPI_LOCIDX, p4est->mpicomm);
-
-  global_offsets[0] = 0;
-  for (i = 0; i < mpisize; i++) {
-    global_offsets[i + 1] = global_offsets[i] +
-      (p4est_gloidx_t) global_num_indep[i];
-  }
+  sc_allgather_final_create(&owned_count, 1, P4EST_MPI_LOCIDX,
+                            (void **) &global_num_indep, 1, P4EST_MPI_LOCIDX,
+                            p4est->mpicomm);
+  lnodes->global_owned_count = global_num_indep;
+  sc_allgather_final_scan_create(&gowned_count, (void **) &global_offsets,
+                                 1, P4EST_MPI_GLOIDX, sc_MPI_SUM, p4est->mpicomm);
   lnodes->global_offset = global_offsets[p4est->mpirank];
   gtotal = global_offsets[p4est->mpisize];
 
@@ -2542,7 +2538,7 @@ p4est_lnodes_global_and_sharers (p4est_lnodes_data_t * data,
     }
   }
   P4EST_FREE (comm_proc);
-  P4EST_FREE (global_offsets);
+  sc_allgather_final_destroy (global_offsets,p4est->mpicomm);
 
   return gtotal;
 }
@@ -2657,7 +2653,7 @@ p4est_lnodes_destroy (p4est_lnodes_t * lnodes)
 
   P4EST_FREE (lnodes->element_nodes);
   P4EST_FREE (lnodes->nonlocal_nodes);
-  P4EST_FREE (lnodes->global_owned_count);
+  sc_allgather_final_destroy (lnodes->global_owned_count,lnodes->mpicomm);
   P4EST_FREE (lnodes->face_code);
 
   count = lnodes->sharers->elem_count;
