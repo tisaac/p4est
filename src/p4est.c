@@ -2652,32 +2652,6 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
                             p4est->mpicomm);
     SC_CHECK_MPI (mpiret);
 
-#if(0)
-    /* run through the count array and repair zero ranges */
-    for (i = 0; i < num_procs; ++i) {
-      if (num_quadrants_in_proc[i] == 0) {
-        for (p = i - 1; p >= 0; --p) {
-          P4EST_ASSERT (num_quadrants_in_proc[p] > 0);
-          if (num_quadrants_in_proc[p] > 1) {
-            --num_quadrants_in_proc[p];
-            ++num_quadrants_in_proc[i];
-            break;
-          }
-        }
-        if (p < 0) {
-          for (p = i + 1; p < num_procs; ++p) {
-            P4EST_ASSERT (num_quadrants_in_proc[p] >= 0);
-            if (num_quadrants_in_proc[p] > 1) {
-              --num_quadrants_in_proc[p];
-              ++num_quadrants_in_proc[i];
-              break;
-            }
-          }
-          P4EST_ASSERT (p < num_procs);
-        }
-      }
-    }
-#endif
   }
 
   /* correct partition */
@@ -3080,10 +3054,8 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   P4EST_FREE (partition_new);
 
   /* communicate corrections */
-  correction = P4EST_ALLOC (int, num_procs);
-  mpiret = MPI_Allgather (&correction_local, 1, MPI_INT,
-                          correction, 1, MPI_INT, p4est->mpicomm);
-  SC_CHECK_MPI (mpiret);
+  sc_allgather_final_create(&correction_local, 1, MPI_INT,
+                            (void **) &correction, 1, MPI_INT, p4est->mpicomm);
 
   /* BEGIN: wait for MPI send to complete */
   if (num_sends > 0) {
@@ -3125,7 +3097,7 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   }
 
   /* free memory */
-  P4EST_FREE (correction);
+  sc_allgather_final_destroy(correction, p4est->mpicomm);
 
   /* return absolute number of moved quadrants */
   return num_moved_quadrants;
