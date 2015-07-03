@@ -40,6 +40,7 @@
 #include <sc_notify.h>
 #include <sc_ranges.h>
 #include <sc_search.h>
+#include <sc_allgather.h>
 #ifdef P4EST_HAVE_ZLIB
 #include <zlib.h>
 #endif
@@ -2398,7 +2399,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
   int64_t             weight, weight_sum;
   int64_t             cut, my_lowcut, my_highcut;
   int64_t            *local_weights;    /* cumulative weights by quadrant */
-  int64_t            *global_weight_sums;
+  int64_t            *global_weight_sums = NULL;
   p4est_quadrant_t   *q;
   p4est_tree_t       *tree;
   MPI_Request        *send_requests, recv_requests[2];
@@ -2439,7 +2440,6 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
   else {
     /* do a weighted partition */
     local_weights = P4EST_ALLOC (int64_t, local_num_quadrants + 1);
-    global_weight_sums = P4EST_ALLOC (int64_t, num_procs + 1);
     P4EST_VERBOSEF ("local quadrant count %lld\n",
                     (long long) local_num_quadrants);
 
@@ -2460,16 +2460,9 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
     P4EST_VERBOSEF ("local weight sum %lld\n", (long long) weight_sum);
 
     /* distribute local weight sums */
-    global_weight_sums[0] = 0;
-    mpiret = MPI_Allgather (&weight_sum, 1, MPI_LONG_LONG_INT,
-                            &global_weight_sums[1], 1, MPI_LONG_LONG_INT,
-                            p4est->mpicomm);
-    SC_CHECK_MPI (mpiret);
+    sc_allgather_final_scan_create((void *) &weight_sum, (void **) &global_weight_sums, 1,
+                                   MPI_LONG_LONG_INT, MPI_SUM, p4est->mpicomm);
 
-    /* adjust all arrays to reflect the global weight */
-    for (i = 0; i < num_procs; ++i) {
-      global_weight_sums[i + 1] += global_weight_sums[i];
-    }
     if (rank > 0) {
       weight_sum = global_weight_sums[rank];
       for (kl = 0; kl <= local_num_quadrants; ++kl) {
@@ -2491,7 +2484,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
     /* if all quadrants have zero weight we do nothing */
     if (weight_sum == 0) {
       P4EST_FREE (local_weights);
-      P4EST_FREE (global_weight_sums);
+      sc_allgather_final_destroy((void *) global_weight_sums, p4est->mpicomm);
       P4EST_FREE (num_quadrants_in_proc);
       p4est_log_indent_pop ();
       P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING
@@ -2619,7 +2612,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
 
     /* free temporary memory */
     P4EST_FREE (local_weights);
-    P4EST_FREE (global_weight_sums);
+    sc_allgather_final_destroy(global_weight_sums,p4est->mpicomm);
 
     /* wait for sends and receives to complete */
     if (num_sends > 0) {
