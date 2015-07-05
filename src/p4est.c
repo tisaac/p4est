@@ -435,36 +435,46 @@ p4est_new_ext (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   /* compute some member variables */
   p4est->first_local_tree = first_tree;
   p4est->last_local_tree = last_tree;
-  p4est->global_first_quadrant = P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
+  p4est->global_first_quadrant = P4EST_SHMEM_ALLOC (p4est_gloidx_t, num_procs
+                                                    + 1, p4est->mpicomm);
   if (!fill_uniform && level > 0) {
     /* this performs an allgather to count all quadrants */
     p4est_comm_count_quadrants (p4est);
   }
   else {
     /* for a uniform forest we know all global information a priori */
-    for (i = 0; i <= num_procs; ++i) {
-      p4est->global_first_quadrant[i] =
-        p4est_partition_cut_gloidx (global_num_quadrants, i, num_procs);
+    if (sc_shmem_write_start (p4est->global_first_quadrant, p4est->mpicomm)) {
+      for (i = 0; i <= num_procs; ++i) {
+        p4est->global_first_quadrant[i] =
+          p4est_partition_cut_gloidx (global_num_quadrants, i, num_procs);
+      }
     }
+    sc_shmem_write_end (p4est->global_first_quadrant, p4est->mpicomm);
     p4est->global_num_quadrants = global_num_quadrants;
   }
 
   /* fill in global partition information */
-  global_first_position = P4EST_ALLOC_ZERO (p4est_quadrant_t, num_procs + 1);
-  for (i = 0; i <= num_procs; ++i) {
-    first_quadrant =
-      p4est_partition_cut_gloidx (global_num_quadrants, i, num_procs);
-    first_tree = first_quadrant / tree_num_quadrants;
-    first_tree_quadrant = first_quadrant - first_tree * tree_num_quadrants;
-    p4est_quadrant_set_morton (&c, level, first_tree_quadrant);
-    global_first_position[i].x = c.x;
-    global_first_position[i].y = c.y;
+  global_first_position = P4EST_SHMEM_ALLOC (p4est_quadrant_t, num_procs + 1,
+                                             p4est->mpicomm);
+  if (sc_shmem_write_start (global_first_position, p4est->mpicomm)) {
+    memset (global_first_position, 0,
+            sizeof (p4est_quadrant_t) * (size_t) (num_procs + 1));
+    for (i = 0; i <= num_procs; ++i) {
+      first_quadrant =
+        p4est_partition_cut_gloidx (global_num_quadrants, i, num_procs);
+      first_tree = first_quadrant / tree_num_quadrants;
+      first_tree_quadrant = first_quadrant - first_tree * tree_num_quadrants;
+      p4est_quadrant_set_morton (&c, level, first_tree_quadrant);
+      global_first_position[i].x = c.x;
+      global_first_position[i].y = c.y;
 #ifdef P4_TO_P8
-    global_first_position[i].z = c.z;
+      global_first_position[i].z = c.z;
 #endif
-    global_first_position[i].level = P4EST_QMAXLEVEL;
-    global_first_position[i].p.which_tree = first_tree;
+      global_first_position[i].level = P4EST_QMAXLEVEL;
+      global_first_position[i].p.which_tree = first_tree;
+    }
   }
+  sc_shmem_write_end (global_first_position, p4est->mpicomm);
   p4est->global_first_position = global_first_position;
 
   /* print more statistics */
@@ -508,8 +518,8 @@ p4est_destroy (p4est_t * p4est)
   }
   sc_mempool_destroy (p4est->quadrant_pool);
 
-  P4EST_FREE (p4est->global_first_quadrant);
-  P4EST_FREE (p4est->global_first_position);
+  P4EST_SHMEM_FREE (p4est->global_first_quadrant, p4est->mpicomm);
+  P4EST_SHMEM_FREE (p4est->global_first_position, p4est->mpicomm);
   P4EST_FREE (p4est);
 }
 
@@ -576,15 +586,22 @@ p4est_copy (p4est_t * input, int copy_data)
 
   /* allocate and copy global quadrant count */
   p4est->global_first_quadrant =
-    P4EST_ALLOC (p4est_gloidx_t, p4est->mpisize + 1);
-  memcpy (p4est->global_first_quadrant, input->global_first_quadrant,
-          (p4est->mpisize + 1) * sizeof (p4est_gloidx_t));
+    P4EST_SHMEM_ALLOC (p4est_gloidx_t, p4est->mpisize + 1, p4est->mpicomm);
+  if (sc_shmem_write_start (p4est->global_first_quadrant, p4est->mpicomm)) {
+    memcpy (p4est->global_first_quadrant, input->global_first_quadrant,
+            (p4est->mpisize + 1) * sizeof (p4est_gloidx_t));
+  }
+  sc_shmem_write_end (p4est->global_first_quadrant, p4est->mpicomm);
 
   /* allocate and copy global partition information */
-  p4est->global_first_position = P4EST_ALLOC (p4est_quadrant_t,
-                                              p4est->mpisize + 1);
-  memcpy (p4est->global_first_position, input->global_first_position,
-          (p4est->mpisize + 1) * sizeof (p4est_quadrant_t));
+  p4est->global_first_position = P4EST_SHMEM_ALLOC (p4est_quadrant_t,
+                                                    p4est->mpisize + 1,
+                                                    p4est->mpicomm);
+  if (sc_shmem_write_start (p4est->global_first_position, p4est->mpicomm)) {
+    memcpy (p4est->global_first_position, input->global_first_position,
+            (p4est->mpisize + 1) * sizeof (p4est_quadrant_t));
+  }
+  sc_shmem_write_end (p4est->global_first_position, p4est->mpicomm);
 
   /* check for valid p4est and return */
   P4EST_ASSERT (p4est_is_valid (p4est));
@@ -2422,24 +2439,30 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
 
 #ifdef P4EST_ENABLE_MPI
   /* allocate new quadrant distribution counts */
-  num_quadrants_in_proc = P4EST_ALLOC (p4est_locidx_t, num_procs);
+  num_quadrants_in_proc = P4EST_SHMEM_ALLOC (p4est_locidx_t,
+                                             (size_t) num_procs,
+                                             p4est->mpicomm);
 
   if (weight_fn == NULL) {
     /* Divide up the quadants equally */
-    for (p = 0, next_quadrant = 0; p < num_procs; ++p) {
-      prev_quadrant = next_quadrant;
-      next_quadrant =
-        p4est_partition_cut_gloidx (global_num_quadrants, p + 1, num_procs);
-      qcount = next_quadrant - prev_quadrant;
-      P4EST_ASSERT (0 <= qcount
-                    && qcount <= (p4est_gloidx_t) P4EST_LOCIDX_MAX);
-      num_quadrants_in_proc[p] = (p4est_locidx_t) (qcount);
+    if (sc_shmem_write_start (num_quadrants_in_proc, p4est->mpicomm)) {
+      for (p = 0, next_quadrant = 0; p < num_procs; ++p) {
+        prev_quadrant = next_quadrant;
+        next_quadrant =
+          p4est_partition_cut_gloidx (global_num_quadrants, p + 1, num_procs);
+        qcount = next_quadrant - prev_quadrant;
+        P4EST_ASSERT (0 <= qcount
+                      && qcount <= (p4est_gloidx_t) P4EST_LOCIDX_MAX);
+        num_quadrants_in_proc[p] = (p4est_locidx_t) (qcount);
+      }
     }
+    sc_shmem_write_end (num_quadrants_in_proc, p4est->mpicomm);
   }
   else {
     /* do a weighted partition */
     local_weights = P4EST_ALLOC (int64_t, local_num_quadrants + 1);
-    global_weight_sums = P4EST_ALLOC (int64_t, num_procs + 1);
+    global_weight_sums = P4EST_SHMEM_ALLOC (int64_t, (size_t) num_procs + 1,
+                                            p4est->mpicomm);
     P4EST_VERBOSEF ("local quadrant count %lld\n",
                     (long long) local_num_quadrants);
 
@@ -2460,16 +2483,8 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
     P4EST_VERBOSEF ("local weight sum %lld\n", (long long) weight_sum);
 
     /* distribute local weight sums */
-    global_weight_sums[0] = 0;
-    mpiret = MPI_Allgather (&weight_sum, 1, MPI_LONG_LONG_INT,
-                            &global_weight_sums[1], 1, MPI_LONG_LONG_INT,
-                            p4est->mpicomm);
-    SC_CHECK_MPI (mpiret);
-
-    /* adjust all arrays to reflect the global weight */
-    for (i = 0; i < num_procs; ++i) {
-      global_weight_sums[i + 1] += global_weight_sums[i];
-    }
+    sc_shmem_prefix(&weight_sum, global_weight_sums, 1, MPI_LONG_LONG_INT,
+                    MPI_SUM, p4est->mpicomm);
     if (rank > 0) {
       weight_sum = global_weight_sums[rank];
       for (kl = 0; kl <= local_num_quadrants; ++kl) {
@@ -2491,8 +2506,8 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
     /* if all quadrants have zero weight we do nothing */
     if (weight_sum == 0) {
       P4EST_FREE (local_weights);
-      P4EST_FREE (global_weight_sums);
-      P4EST_FREE (num_quadrants_in_proc);
+      P4EST_SHMEM_FREE (global_weight_sums, p4est->mpicomm);
+      P4EST_SHMEM_FREE (num_quadrants_in_proc, p4est->mpicomm);
       p4est_log_indent_pop ();
       P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING
                                "_partition no shipping\n");
@@ -2619,7 +2634,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
 
     /* free temporary memory */
     P4EST_FREE (local_weights);
-    P4EST_FREE (global_weight_sums);
+    P4EST_SHMEM_FREE (global_weight_sums, p4est->mpicomm);
 
     /* wait for sends and receives to complete */
     if (num_sends > 0) {
@@ -2654,36 +2669,38 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
     P4EST_LDEBUGF ("weighted partition count %lld\n", (long long) qcount);
     P4EST_ASSERT (qcount >= 0 && qcount <= (p4est_gloidx_t) P4EST_LOCIDX_MAX);
     qlocal = (p4est_locidx_t) qcount;
-    mpiret = MPI_Allgather (&qlocal, 1, P4EST_MPI_LOCIDX,
-                            num_quadrants_in_proc, 1, P4EST_MPI_LOCIDX,
-                            p4est->mpicomm);
-    SC_CHECK_MPI (mpiret);
+    sc_shmem_allgather (&qlocal, 1, P4EST_MPI_LOCIDX,
+                              num_quadrants_in_proc, 1, P4EST_MPI_LOCIDX,
+                              p4est->mpicomm);
 
 #if(0)
-    /* run through the count array and repair zero ranges */
-    for (i = 0; i < num_procs; ++i) {
-      if (num_quadrants_in_proc[i] == 0) {
-        for (p = i - 1; p >= 0; --p) {
-          P4EST_ASSERT (num_quadrants_in_proc[p] > 0);
-          if (num_quadrants_in_proc[p] > 1) {
-            --num_quadrants_in_proc[p];
-            ++num_quadrants_in_proc[i];
-            break;
-          }
-        }
-        if (p < 0) {
-          for (p = i + 1; p < num_procs; ++p) {
-            P4EST_ASSERT (num_quadrants_in_proc[p] >= 0);
+    if (sc_shmem_write_start(num_quadrants_in_proc,p4est->mpicomm)) {
+      /* run through the count array and repair zero ranges */
+      for (i = 0; i < num_procs; ++i) {
+        if (num_quadrants_in_proc[i] == 0) {
+          for (p = i - 1; p >= 0; --p) {
+            P4EST_ASSERT (num_quadrants_in_proc[p] > 0);
             if (num_quadrants_in_proc[p] > 1) {
               --num_quadrants_in_proc[p];
               ++num_quadrants_in_proc[i];
               break;
             }
           }
-          P4EST_ASSERT (p < num_procs);
+          if (p < 0) {
+            for (p = i + 1; p < num_procs; ++p) {
+              P4EST_ASSERT (num_quadrants_in_proc[p] >= 0);
+              if (num_quadrants_in_proc[p] > 1) {
+                --num_quadrants_in_proc[p];
+                ++num_quadrants_in_proc[i];
+                break;
+              }
+            }
+            P4EST_ASSERT (p < num_procs);
+          }
         }
       }
     }
+    sc_shmem_write_end(num_quadrants_in_proc,p4est->mpicomm);
 #endif
   }
 
@@ -2698,7 +2715,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
 
   /* run the partition algorithm with proper quadrant counts */
   global_shipped = p4est_partition_given (p4est, num_quadrants_in_proc);
-  P4EST_FREE (num_quadrants_in_proc);
+  P4EST_SHMEM_FREE (num_quadrants_in_proc,p4est->mpicomm);
 
   /* check validity of the p4est */
   P4EST_ASSERT (p4est_is_valid (p4est));
@@ -2745,12 +2762,16 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   p4est_gloidx_t      num_moved_quadrants;
 
   /* create array with first quadrants of new partition */
-  partition_new = P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
-  partition_new[0] = 0;
-  for (i = 1; i < num_procs; i++) {     /* loop over all processes */
-    partition_new[i] = partition_new[i - 1] + num_quadrants_in_proc[i - 1];
+  partition_new = P4EST_SHMEM_ALLOC (p4est_gloidx_t, (size_t) num_procs + 1,
+                                     p4est->mpicomm);
+  if (sc_shmem_write_start (partition_new, p4est->mpicomm)) {
+    partition_new[0] = 0;
+    for (i = 1; i < num_procs; i++) {     /* loop over all processes */
+      partition_new[i] = partition_new[i - 1] + num_quadrants_in_proc[i - 1];
+    }
+    partition_new[num_procs] = global_num_quadrants;
   }
-  partition_new[num_procs] = global_num_quadrants;
+  sc_shmem_write_end (partition_new, p4est->mpicomm);
 
   /* BEGIN: send */
   if (partition_now[rank] < partition_now[rank + 1]) {
@@ -3084,13 +3105,12 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   /* END: compute correction with received parent quadrants */
 
   /* free memory */
-  P4EST_FREE (partition_new);
+  P4EST_SHMEM_FREE (partition_new,p4est->mpicomm);
 
   /* communicate corrections */
-  correction = P4EST_ALLOC (int, num_procs);
-  mpiret = MPI_Allgather (&correction_local, 1, MPI_INT,
-                          correction, 1, MPI_INT, p4est->mpicomm);
-  SC_CHECK_MPI (mpiret);
+  correction = P4EST_SHMEM_ALLOC (int, (size_t) num_procs, p4est->mpicomm);
+  sc_shmem_allgather (&correction_local, 1, MPI_INT,
+                            correction, 1, MPI_INT, p4est->mpicomm);
 
   /* BEGIN: wait for MPI send to complete */
   if (num_sends > 0) {
@@ -3105,34 +3125,37 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   /* END: wait for MPI send to complete */
 
   /* correct partition */
-  current_proc =
-    p4est_next_nonempty_process (0, num_procs, num_quadrants_in_proc);
-  next_proc =
-    p4est_next_nonempty_process (current_proc + 1, num_procs,
-                                 num_quadrants_in_proc);
-  num_moved_quadrants = 0;
-  while (current_proc < num_procs) {
-    /* loop over all non empty processes */
-    /* compute correct partition for process `current_proc` */
-    if (0 < current_proc && current_proc < num_procs) {
-      /* if any process but first */
-      num_quadrants_in_proc[current_proc] += correction[current_proc];
-      num_moved_quadrants += (p4est_gloidx_t) abs (correction[current_proc]);
-    }
-    if (next_proc < num_procs) {
-      /* if first process or next process is feasible */
-      num_quadrants_in_proc[current_proc] -= correction[next_proc];
-    }
-
-    /* increase process ids */
-    current_proc = next_proc;
+  if (sc_shmem_write_start (num_quadrants_in_proc, p4est->mpicomm)) {
+    current_proc =
+      p4est_next_nonempty_process (0, num_procs, num_quadrants_in_proc);
     next_proc =
-      p4est_next_nonempty_process (next_proc + 1, num_procs,
+      p4est_next_nonempty_process (current_proc + 1, num_procs,
                                    num_quadrants_in_proc);
+    num_moved_quadrants = 0;
+    while (current_proc < num_procs) {
+      /* loop over all non empty processes */
+      /* compute correct partition for process `current_proc` */
+      if (0 < current_proc && current_proc < num_procs) {
+        /* if any process but first */
+        num_quadrants_in_proc[current_proc] += correction[current_proc];
+        num_moved_quadrants += (p4est_gloidx_t) abs (correction[current_proc]);
+      }
+      if (next_proc < num_procs) {
+        /* if first process or next process is feasible */
+        num_quadrants_in_proc[current_proc] -= correction[next_proc];
+      }
+
+      /* increase process ids */
+      current_proc = next_proc;
+      next_proc =
+        p4est_next_nonempty_process (next_proc + 1, num_procs,
+                                     num_quadrants_in_proc);
+    }
   }
+  sc_shmem_write_end (num_quadrants_in_proc, p4est->mpicomm);
 
   /* free memory */
-  P4EST_FREE (correction);
+  P4EST_SHMEM_FREE (correction,p4est->mpicomm);
 
   /* return absolute number of moved quadrants */
   return num_moved_quadrants;

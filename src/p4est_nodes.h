@@ -139,6 +139,7 @@ p4est_hang2_t;
  */
 typedef struct p4est_nodes
 {
+  sc_MPI_Comm         mpicomm;
   p4est_locidx_t      num_local_quadrants;
   p4est_locidx_t      num_owned_indeps, num_owned_shared;
   p4est_locidx_t      offset_owned_indeps;

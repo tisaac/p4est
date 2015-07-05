@@ -45,6 +45,7 @@
 
 /* indirectly also include sc.h */
 #include <sc_containers.h>
+#include <sc_shmem.h>
 #define _p4est_const _sc_const
 
 SC_EXTERN_C_BEGIN;
@@ -123,6 +124,12 @@ typedef int64_t     p4est_gloidx_t;
 #define P4EST_STRDUP(s)                 sc_strdup (p4est_package_id, (s))
 /** free an allocated array */
 #define P4EST_FREE(p)                   sc_free (p4est_package_id, (p))
+
+/** allocate a \a t-array with \a n elements in a redundant array that is the
+ * same on all processes in communicator \a c: see sc_shmem.h for details */
+#define P4EST_SHMEM_ALLOC(t,e,c) (t *) sc_shmem_malloc (p4est_package_id, sizeof(t), e, c)
+/** free an array \a allocated with P4EST_SHMEM_ALLOC on communicator \a c */
+#define P4EST_SHMEM_FREE(a,c) sc_shmem_free (p4est_package_id, a, c)
 
 /* log helper macros */
 #define P4EST_GLOBAL_LOG(p,s)                           \
