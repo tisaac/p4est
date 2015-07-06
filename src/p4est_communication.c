@@ -41,8 +41,8 @@ p4est_comm_count_quadrants (p4est_t * p4est)
   int                 i;
   const int           num_procs = p4est->mpisize;
 
-  sc_shmem_prefix (&qlocal, global_first_quadrant, 1, P4EST_MPI_GLOIDX, sc_MPI_SUM,
-                   p4est->mpicomm);
+  sc_shmem_prefix (&qlocal, global_first_quadrant, 1, P4EST_MPI_GLOIDX,
+                   sc_MPI_SUM, p4est->mpicomm);
   p4est->global_num_quadrants = global_first_quadrant[num_procs];
 }
 

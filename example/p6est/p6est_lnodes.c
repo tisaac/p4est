@@ -111,7 +111,8 @@ p6est_lnodes_new (p6est_t * p6est, p6est_ghost_t * ghost, int degree)
     lnodes->element_nodes =
       P4EST_REALLOC (en, p4est_locidx_t, P8EST_CHILDREN * nll);
 
-    owned_offsets = P4EST_SHMEM_ALLOC (p4est_gloidx_t, mpisize + 1, lnodes->mpicomm);
+    owned_offsets =
+      P4EST_SHMEM_ALLOC (p4est_gloidx_t, mpisize + 1, lnodes->mpicomm);
 
     sc_shmem_allgather (&newowned, 1, P4EST_MPI_LOCIDX,
                         lnodes->global_owned_count, 1, P4EST_MPI_LOCIDX,
@@ -120,7 +121,8 @@ p6est_lnodes_new (p6est_t * p6est, p6est_ghost_t * ghost, int degree)
     if (sc_shmem_write_start (owned_offsets, p6est->mpicomm)) {
       owned_offsets[0] = 0;
       for (i = 0; i < mpisize; i++) {
-        owned_offsets[i + 1] = owned_offsets[i] + lnodes->global_owned_count[i];
+        owned_offsets[i + 1] =
+          owned_offsets[i] + lnodes->global_owned_count[i];
       }
     }
     sc_shmem_write_end (owned_offsets, p6est->mpicomm);
@@ -267,14 +269,17 @@ p6est_lnodes_new (p6est_t * p6est, p6est_ghost_t * ghost, int degree)
 
   gnum_owned = num_owned;
 
-  owned_offsets = P4EST_SHMEM_ALLOC (p4est_gloidx_t, mpisize + 1, p6est->mpicomm);
-  global_owned_count = P4EST_SHMEM_ALLOC (p4est_locidx_t, mpisize, p6est->mpicomm);
-  sc_shmem_prefix (&gnum_owned, owned_offsets, 1, P4EST_MPI_GLOIDX, sc_MPI_SUM,
-                   p6est->mpicomm);
+  owned_offsets =
+    P4EST_SHMEM_ALLOC (p4est_gloidx_t, mpisize + 1, p6est->mpicomm);
+  global_owned_count =
+    P4EST_SHMEM_ALLOC (p4est_locidx_t, mpisize, p6est->mpicomm);
+  sc_shmem_prefix (&gnum_owned, owned_offsets, 1, P4EST_MPI_GLOIDX,
+                   sc_MPI_SUM, p6est->mpicomm);
 
   if (sc_shmem_write_start (global_owned_count, p6est->mpicomm)) {
     for (i = 0; i < mpisize; i++) {
-      global_owned_count[i] = (p4est_locidx_t) (owned_offsets[i + 1] - owned_offsets[i]);
+      global_owned_count[i] =
+        (p4est_locidx_t) (owned_offsets[i + 1] - owned_offsets[i]);
     }
   }
   sc_shmem_write_end (global_owned_count, p6est->mpicomm);

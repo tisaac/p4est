@@ -148,7 +148,8 @@ p4est_nodes_new_local (p4est_t * p4est)
   sc_array_init (&nodes->shared_indeps, sizeof (sc_recycle_array_t));
   nodes->shared_offsets = NULL;
   nodes->nonlocal_ranks = NULL;
-  nodes->global_owned_indeps = P4EST_SHMEM_ALLOC (p4est_locidx_t, 1, nodes->mpicomm);
+  nodes->global_owned_indeps =
+    P4EST_SHMEM_ALLOC (p4est_locidx_t, 1, nodes->mpicomm);
 
   /* Initialize vertex list to all -1.  Legitimate values are >= 0.  */
   ln = nodes->local_nodes;
@@ -1152,7 +1153,8 @@ p4est_nodes_new (p4est_t * p4est, p4est_ghost_t * ghost)
   sc_hash_array_rip (indep_nodes, inda = &nodes->indep_nodes);
   nodes->nonlocal_ranks =
     P4EST_ALLOC (int, num_indep_nodes - num_owned_indeps);
-  nodes->global_owned_indeps = P4EST_SHMEM_ALLOC (p4est_locidx_t, num_procs, nodes->mpicomm);
+  nodes->global_owned_indeps =
+    P4EST_SHMEM_ALLOC (p4est_locidx_t, num_procs, nodes->mpicomm);
   indep_nodes = NULL;
 
 #ifdef P4EST_ENABLE_MPI
@@ -1336,7 +1338,7 @@ p4est_nodes_destroy (p4est_nodes_t * nodes)
   sc_array_reset (&nodes->shared_indeps);
   P4EST_FREE (nodes->shared_offsets);
   P4EST_FREE (nodes->nonlocal_ranks);
-  P4EST_SHMEM_FREE (nodes->global_owned_indeps,nodes->mpicomm);
+  P4EST_SHMEM_FREE (nodes->global_owned_indeps, nodes->mpicomm);
 
   P4EST_FREE (nodes);
 }
