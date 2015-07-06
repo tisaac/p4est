@@ -96,6 +96,14 @@ main (int argc, char **argv)
   connectivity = p4est_connectivity_new_corner ();
   p4est = p4est_new_ext (mpicomm, connectivity, 15, 0, 0,
                          sizeof (user_data_t), init_fn, NULL);
+  p4est_destroy (p4est);
+  p4est_connectivity_destroy (connectivity);
+  sc_finalize ();
+
+  mpiret = sc_MPI_Finalize ();
+  SC_CHECK_MPI (mpiret);
+
+  return 0;
 
   num_procs = p4est->mpisize;
 

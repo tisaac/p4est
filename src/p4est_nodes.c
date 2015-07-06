@@ -148,7 +148,7 @@ p4est_nodes_new_local (p4est_t * p4est)
   sc_array_init (&nodes->shared_indeps, sizeof (sc_recycle_array_t));
   nodes->shared_offsets = NULL;
   nodes->nonlocal_ranks = NULL;
-  nodes->global_owned_indeps = NULL;
+  nodes->global_owned_indeps = P4EST_SHMEM_ALLOC (p4est_locidx_t, 1, nodes->mpicomm);
 
   /* Initialize vertex list to all -1.  Legitimate values are >= 0.  */
   ln = nodes->local_nodes;

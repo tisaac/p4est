@@ -205,8 +205,11 @@ p4est_new_points (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
 
   /* create point based partition */
   P4EST_QUADRANT_INIT (&f);
-  p4est->global_first_position =
-    P4EST_ALLOC_ZERO (p4est_quadrant_t, num_procs + 1);
+  p4est->global_first_position = P4EST_SHMEM_ALLOC (p4est_quadrant_t, num_procs + 1, p4est->mpicomm);
+  if (sc_shmem_write_start (p4est->global_first_position, p4est->mpicomm)) {
+    memset (p4est->global_first_position, 0, sizeof (p4est_quadrant_t) * (size_t) (num_procs + 1));
+  }
+  sc_shmem_write_end (p4est->global_first_position, p4est->mpicomm);
   if (num_points == 0) {
     P4EST_VERBOSE ("Empty processor");
     first_tree = p4est->first_local_tree = -1;
@@ -356,7 +359,7 @@ p4est_new_points (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   }
 
   /* compute some member variables */
-  p4est->global_first_quadrant = P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
+  p4est->global_first_quadrant = P4EST_SHMEM_ALLOC (p4est_gloidx_t, num_procs + 1, p4est->mpicomm);
   p4est_comm_count_quadrants (p4est);
 
   /* print more statistics */

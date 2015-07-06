@@ -587,21 +587,17 @@ p4est_copy (p4est_t * input, int copy_data)
   /* allocate and copy global quadrant count */
   p4est->global_first_quadrant =
     P4EST_SHMEM_ALLOC (p4est_gloidx_t, p4est->mpisize + 1, p4est->mpicomm);
-  if (sc_shmem_write_start (p4est->global_first_quadrant, p4est->mpicomm)) {
-    memcpy (p4est->global_first_quadrant, input->global_first_quadrant,
-            (p4est->mpisize + 1) * sizeof (p4est_gloidx_t));
-  }
-  sc_shmem_write_end (p4est->global_first_quadrant, p4est->mpicomm);
+  sc_shmem_memcpy (p4est->global_first_quadrant, input->global_first_quadrant,
+                   (p4est->mpisize + 1) * sizeof (p4est_gloidx_t),
+                   p4est->mpicomm);
 
   /* allocate and copy global partition information */
   p4est->global_first_position = P4EST_SHMEM_ALLOC (p4est_quadrant_t,
                                                     p4est->mpisize + 1,
                                                     p4est->mpicomm);
-  if (sc_shmem_write_start (p4est->global_first_position, p4est->mpicomm)) {
-    memcpy (p4est->global_first_position, input->global_first_position,
-            (p4est->mpisize + 1) * sizeof (p4est_quadrant_t));
-  }
-  sc_shmem_write_end (p4est->global_first_position, p4est->mpicomm);
+  sc_shmem_memcpy (p4est->global_first_position, input->global_first_position,
+                   (p4est->mpisize + 1) * sizeof (p4est_quadrant_t),
+                   p4est->mpicomm);
 
   /* check for valid p4est and return */
   P4EST_ASSERT (p4est_is_valid (p4est));
