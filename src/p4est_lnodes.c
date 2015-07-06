@@ -2343,10 +2343,10 @@ p4est_lnodes_global_and_sharers (p4est_lnodes_data_t * data,
                                                     mpisize + 1);
   p4est_locidx_t     *poff = data->poff;
 
-  global_num_indep = lnodes->global_owned_count = P4EST_ALLOC (p4est_locidx_t,
-                                                               mpisize);
-  sc_MPI_Allgather (&owned_count, 1, P4EST_MPI_LOCIDX, global_num_indep, 1,
-                    P4EST_MPI_LOCIDX, p4est->mpicomm);
+  global_num_indep = lnodes->global_owned_count =
+    P4EST_SHMEM_ALLOC (p4est_locidx_t, mpisize, lnodes->mpicomm);
+  sc_shmem_allgather (&owned_count, 1, P4EST_MPI_LOCIDX, global_num_indep, 1,
+                      P4EST_MPI_LOCIDX, p4est->mpicomm);
 
   global_offsets[0] = 0;
   for (i = 0; i < mpisize; i++) {
@@ -2657,7 +2657,7 @@ p4est_lnodes_destroy (p4est_lnodes_t * lnodes)
 
   P4EST_FREE (lnodes->element_nodes);
   P4EST_FREE (lnodes->nonlocal_nodes);
-  P4EST_FREE (lnodes->global_owned_count);
+  P4EST_SHMEM_FREE (lnodes->global_owned_count, lnodes->mpicomm);
   P4EST_FREE (lnodes->face_code);
 
   count = lnodes->sharers->elem_count;

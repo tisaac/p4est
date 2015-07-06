@@ -3280,9 +3280,12 @@ p4est_partition_given (p4est_t * p4est,
   P4EST_ASSERT (p4est->global_num_quadrants ==
                 new_global_last_quad_index[num_procs - 1] + 1);
   P4EST_ASSERT (p4est->global_first_quadrant[0] == 0);
-  for (i = 0; i < num_procs; ++i) {
-    p4est->global_first_quadrant[i + 1] = global_last_quad_index[i] + 1;
+  if (sc_shmem_write_start (p4est->global_first_quadrant, p4est->mpicomm)) {
+    for (i = 0; i < num_procs; ++i) {
+      p4est->global_first_quadrant[i + 1] = global_last_quad_index[i] + 1;
+    }
   }
+  sc_shmem_write_end (p4est->global_first_quadrant, p4est->mpicomm);
   P4EST_FREE (new_global_last_quad_index);
   global_last_quad_index = new_global_last_quad_index = NULL;
 

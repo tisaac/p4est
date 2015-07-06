@@ -139,10 +139,11 @@ p4est_inflate (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   num_trees = connectivity->num_trees;
 
   /* create global first quadrant offsets */
-  gfq = p4est->global_first_quadrant =
-    P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
-  memcpy (p4est->global_first_quadrant, global_first_quadrant,
-          (num_procs + 1) * sizeof (p4est_gloidx_t));
+  gfq = p4est->global_first_quadrant = P4EST_SHMEM_ALLOC (p4est_gloidx_t,
+                                                          num_procs + 1,
+                                                          p4est->mpicomm);
+  sc_shmem_memcpy (p4est->global_first_quadrant, global_first_quadrant,
+                   (num_procs + 1) * sizeof (p4est_gloidx_t), p4est->mpicomm);
 #ifdef P4EST_ENABLE_DEBUG
   P4EST_ASSERT (gfq[0] == 0);
   for (p = 0; p < num_procs; ++p) {
@@ -253,8 +254,9 @@ p4est_inflate (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   P4EST_ASSERT (gquadremain == 0);
 
   /* communicate partition information */
-  p4est->global_first_position =
-    P4EST_ALLOC (p4est_quadrant_t, num_procs + 1);
+  p4est->global_first_position = P4EST_SHMEM_ALLOC (p4est_quadrant_t,
+                                                    num_procs + 1,
+                                                    p4est->mpicomm);
   p4est_comm_global_partition (p4est, NULL);
 
   /* print more statistics */

@@ -132,6 +132,7 @@ p4est_nodes_new_local (p4est_t * p4est)
   P4EST_QUADRANT_INIT (&neighbor);
 
   nodes = P4EST_ALLOC (p4est_nodes_t, 1);
+  nodes->mpicomm = p4est->mpicomm;
   nodes->num_local_quadrants = Ncells;
   nodes->num_owned_indeps = -1;
   nodes->num_owned_shared = 0;
@@ -147,7 +148,8 @@ p4est_nodes_new_local (p4est_t * p4est)
   sc_array_init (&nodes->shared_indeps, sizeof (sc_recycle_array_t));
   nodes->shared_offsets = NULL;
   nodes->nonlocal_ranks = NULL;
-  nodes->global_owned_indeps = NULL;
+  nodes->global_owned_indeps =
+    P4EST_SHMEM_ALLOC (p4est_locidx_t, 1, nodes->mpicomm);
 
   /* Initialize vertex list to all -1.  Legitimate values are >= 0.  */
   ln = nodes->local_nodes;
@@ -569,6 +571,7 @@ p4est_nodes_new (p4est_t * p4est, p4est_ghost_t * ghost)
   /* allocate and initialize the node structure to return */
   nodes = P4EST_ALLOC (p4est_nodes_t, 1);
   memset (nodes, -1, sizeof (*nodes));
+  nodes->mpicomm = p4est->mpicomm;
   faha = &nodes->face_hangings;
 #ifdef P4_TO_P8
   edha = &nodes->edge_hangings;
@@ -1150,8 +1153,8 @@ p4est_nodes_new (p4est_t * p4est, p4est_ghost_t * ghost)
   sc_hash_array_rip (indep_nodes, inda = &nodes->indep_nodes);
   nodes->nonlocal_ranks =
     P4EST_ALLOC (int, num_indep_nodes - num_owned_indeps);
-  nodes->global_owned_indeps = P4EST_ALLOC (p4est_locidx_t, num_procs);
-  nodes->global_owned_indeps[rank] = num_owned_indeps;
+  nodes->global_owned_indeps =
+    P4EST_SHMEM_ALLOC (p4est_locidx_t, num_procs, nodes->mpicomm);
   indep_nodes = NULL;
 
 #ifdef P4EST_ENABLE_MPI
@@ -1280,10 +1283,9 @@ p4est_nodes_new (p4est_t * p4est, p4est_ghost_t * ghost)
   P4EST_FREE (peers);
   P4EST_FREE (procs);
 
-  mpiret = MPI_Allgather (&num_owned_indeps, 1, P4EST_MPI_LOCIDX,
-                          nodes->global_owned_indeps, 1, P4EST_MPI_LOCIDX,
-                          p4est->mpicomm);
-  SC_CHECK_MPI (mpiret);
+  sc_shmem_allgather (&num_owned_indeps, 1, P4EST_MPI_LOCIDX,
+                      nodes->global_owned_indeps, 1, P4EST_MPI_LOCIDX,
+                      p4est->mpicomm);
 #endif /* P4EST_ENABLE_MPI */
 
   /* Print some statistics and clean up. */
@@ -1336,7 +1338,7 @@ p4est_nodes_destroy (p4est_nodes_t * nodes)
   sc_array_reset (&nodes->shared_indeps);
   P4EST_FREE (nodes->shared_offsets);
   P4EST_FREE (nodes->nonlocal_ranks);
-  P4EST_FREE (nodes->global_owned_indeps);
+  P4EST_SHMEM_FREE (nodes->global_owned_indeps, nodes->mpicomm);
 
   P4EST_FREE (nodes);
 }
