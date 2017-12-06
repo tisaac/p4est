@@ -21,6 +21,5 @@
   along with p4est; if not, write to the Free Software Foundation, Inc.,
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
-
 #include <p4est_to_p8est.h>
 #include "test_fusion2.c"
