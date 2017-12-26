@@ -23,13 +23,66 @@
 */
 #ifndef P4_TO_P8
 #include <p4est.h>
+#include <p4est_bits.h>
 #include <p4est_ghost.h>
 #include <p4est_lnodes.h>
 #else
+#include <p8est_bits.h>
 #include <p8est.h>
 #include <p8est_ghost.h>
 #include <p8est_lnodes.h>
 #endif
+#include <sc_flops.h>
+#include <sc_statistics.h>
+#include <sc_options.h>
+
+
+#ifndef P4_TO_P8
+static int          refine_level = 5;
+#else
+static int          refine_level = 4;
+#endif
+
+
+static int
+refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
+           p4est_quadrant_t * quadrant)
+{
+  int                 cid;
+
+  if (which_tree == 2 || which_tree == 3) {
+    return 0;
+  }
+
+  cid = p4est_quadrant_child_id (quadrant);
+
+  if (cid == P4EST_CHILDREN - 1 ||
+      (quadrant->x >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - 2) &&
+       quadrant->y >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - 2)
+#ifdef P4_TO_P8
+       && quadrant->z >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - 2)
+#endif
+      )) {
+    return 1;
+  }
+  if ((int) quadrant->level >= (refine_level - (int) (which_tree % 3))) {
+    return 0;
+  }
+  if (quadrant->level == 1 && cid == 2) {
+    return 1;
+  }
+  if (quadrant->x == P4EST_QUADRANT_LEN (2) &&
+      quadrant->y == P4EST_LAST_OFFSET (2)) {
+    return 1;
+  }
+  if (quadrant->y >= P4EST_QUADRANT_LEN (2)) {
+    return 0;
+  }
+
+  return 1;
+}
+
+
 
 int
 main (int argc, char **argv)
@@ -59,6 +112,15 @@ main (int argc, char **argv)
 #endif
 
   p4est = p4est_new (mpicomm, conn, 0, NULL, NULL);
+
+  p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
+
+  p4est_partition (p4est, 0, NULL);
+
+  p4est_refine (p4est, 1,refine_fn, NULL);
+
+
+  ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
   /* clean up */
   p4est_destroy (p4est);
