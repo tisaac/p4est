@@ -43,6 +43,11 @@ static int          refine_level = 5;
 static int          refine_level = 4;
 #endif
 
+typedef struct
+{
+  int dummy;
+}
+test_fusion_t;
 
 static int
 refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
@@ -82,7 +87,10 @@ refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
   return 1;
 }
 
+static int refine_in_loop (p4est_t *p4est, p4est_topidx_t which_tree,
+                           p4est_quadrant_t *quad);
 
+static void mark_leaves (p4est_t *, int *, test_fusion_t *ctx);
 
 int
 main (int argc, char **argv)
@@ -95,15 +103,35 @@ main (int argc, char **argv)
   int                 num_cycles = 2;
   int                 i;
   p4est_lnodes_t     *lnodes;
+  int                 first_argc;
   int                 type;
+  int                 num_tests = 3;
+  sc_options_t       *opt;
+  test_fusion_t       ctx;
 
-  /* initialize MPI */
+  /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
   mpicomm = sc_MPI_COMM_WORLD;
 
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
   p4est_init (NULL, SC_LP_DEFAULT);
+
+  /* process command line arguments */
+  opt = sc_options_new (argv[0]);
+
+  sc_options_add_int (opt, 'k', "num-tests", &num_tests, num_tests,
+                      "The number of instances of timiing the fusion loop");
+
+  first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
+                                 opt, argc, argv);
+  if (first_argc < 0 || first_argc != argc) {
+    sc_options_print_usage (p4est_package_id, SC_LP_ERROR, opt, NULL);
+    return 1;
+  }
+  sc_options_print_summary (p4est_package_id, SC_LP_PRODUCTION, opt);
+
+  /* set values in ctx here */
 
 #ifndef P4_TO_P8
   conn = p4est_connectivity_new_moebius ();
@@ -113,18 +141,63 @@ main (int argc, char **argv)
 
   p4est = p4est_new (mpicomm, conn, 0, NULL, NULL);
 
+  p4est_refine (p4est, 1, refine_fn, NULL);
+
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
 
   p4est_partition (p4est, 0, NULL);
 
-  p4est_refine (p4est, 1,refine_fn, NULL);
-
-
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
+  for (i = 0; i <= num_tests; i++) {
+    p4est_t *forest_copy;
+    int     *refine_flags;
+    p4est_ghost_t *gl_copy;
+
+    forest_copy = p4est_copy (p4est, 0 /* do not copy data */);
+
+    /* predefine which leaves we want to refine and coarsen */
+
+    /* create an array of ints with values meaning:
+     *   0 : keep
+     *   1 : refine
+     *   2 : coarsen
+     */
+
+    refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
+
+    mark_leaves (forest_copy, refine_flags, &ctx);
+
+    /* start the timing of one instance of the timing cycle */
+    /* see sc_flops_snap() / sc_flops_shot() in timings2.c */
+
+    /* non-recursive refinement loop: the callback simply checks the flags
+     * that we have defined for which leaves we want to refine */
+
+    p4est_refine (forest_copy, 0 /* non-recursive */, refine_in_loop, NULL);
+
+    p4est_balance (forest_copy, P4EST_CONNECT_FULL, NULL);
+
+    p4est_partition (forest_copy, 0, NULL);
+
+    gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
+
+    /* end  the timing of one instance of the timing cycle */
+
+    /* clean up */
+    P4EST_FREE (refine_flags);
+    p4est_ghost_destroy (gl_copy);
+    p4est_destroy (forest_copy);
+  }
+
+  /* accumulate and print statistics */
+
   /* clean up */
+  p4est_ghost_destroy (ghost);
   p4est_destroy (p4est);
   p4est_connectivity_destroy (conn);
+
+  sc_options_destroy (opt);
 
   /* exit */
   sc_finalize ();
@@ -133,4 +206,4 @@ main (int argc, char **argv)
   SC_CHECK_MPI (mpiret);
 
   return 0;
-}  
+}
