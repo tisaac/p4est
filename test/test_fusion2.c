@@ -96,13 +96,20 @@ main (int argc, char **argv)
   int                 i;
   p4est_lnodes_t     *lnodes;
   int                 type;
+  sc_statinfo_t		  stats[TIMINGS_NUM_STATS];
+  sc_flopinfo_t		  fi, snapshot;
+
+  mpicomm = sc_MPI_COMM_WORLD;
 
   /* initialize MPI */
   mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpicomm = sc_MPI_COMM_WORLD;
+  sc_init (mpicomm,1, 1, NULL, SC_LP_DEFAULT);
 
-  sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
+#ifndef P4EST_ENABLE_DEBUG 
+  sc_set_log_defaults (NULL, NULL, SC_LP_STATISTICS); 
+#endif 
+
   p4est_init (NULL, SC_LP_DEFAULT);
 
 #ifndef P4_TO_P8
@@ -117,10 +124,39 @@ main (int argc, char **argv)
 
   p4est_partition (p4est, 0, NULL);
 
+  /*Is refine needed?, or implement refine to TAG? */
   p4est_refine (p4est, 1,refine_fn, NULL);
 
-
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
+
+
+  /* NEED TO IMPLEMENT TAGGING keep,refine,coarsen */
+
+
+
+  /* start overall timing */
+  mpiret = sc_MPI_Barrier (mpicomm);
+  SC_CHECK_MPI (mpiret);
+  sc_flopts_start (&fi);
+
+  conn4 = p4est_connectivity_new_byname (config_name);
+  SC_CHECK_ABORTF (conn4 != NULL, "Invalid connectivity name: %s\n",
+                   config_name);
+
+  sc_flops_snap (&fi, &snapshot);
+  conn = p6est_connectivity_new (conn4, NULL, height);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_CONNECTIVITY], snapshot.iwtime,
+                 "Connectivity");
+
+  p4est_connectivity_destroy (conn4);
+
+  sc_flops_snap (&fi, &snapshot);
+
+
+
+
+
 
   /* clean up */
   p4est_destroy (p4est);
