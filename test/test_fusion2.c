@@ -55,18 +55,6 @@ enum
   TIMINGS_NUM_STATS
 };
 
-
-
-
-
-
-
-typedef struct
-{
-  int dummy;
-}
-test_fusion_t;
-
 static int
 refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
            p4est_quadrant_t * quadrant)
@@ -191,9 +179,6 @@ main (int argc, char **argv)
      */
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
-
-
-
 
     mark_leaves (forest_copy, refine_flags, &ctx);
 
