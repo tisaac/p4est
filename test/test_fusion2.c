@@ -43,6 +43,19 @@ static int          refine_level = 5;
 static int          refine_level = 4;
 #endif
 
+
+enum
+{
+  TIMINGS_INIT,
+  TIMINGS_NUM_STATS
+};
+
+
+
+
+
+
+
 typedef struct
 {
   int dummy;
@@ -105,10 +118,10 @@ main (int argc, char **argv)
   p4est_lnodes_t     *lnodes;
   int                 first_argc;
   int                 type;
-  sc_statinfo_t		  stats[TIMINGS_NUM_STATS];
+  int                 num_tests = 3;
+  sc_statinfo_t		  stats[num_tests+1];
   sc_flopinfo_t		  fi, snapshot;
   mpicomm = sc_MPI_COMM_WORLD;
-  int                 num_tests = 3;
   sc_options_t       *opt;
   test_fusion_t       ctx;
 
@@ -156,6 +169,8 @@ main (int argc, char **argv)
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
   for (i = 0; i <= num_tests; i++) {
+
+    sc_flops_snap (&fi, &snapshot);
     p4est_t *forest_copy;
     int     *refine_flags;
     p4est_ghost_t *gl_copy;
@@ -172,6 +187,9 @@ main (int argc, char **argv)
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
+
+
+
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     /* start the timing of one instance of the timing cycle */
@@ -179,6 +197,7 @@ main (int argc, char **argv)
 
     /* non-recursive refinement loop: the callback simply checks the flags
      * that we have defined for which leaves we want to refine */
+
 
     p4est_refine (forest_copy, 0 /* non-recursive */, refine_in_loop, NULL);
 
@@ -194,34 +213,12 @@ main (int argc, char **argv)
     P4EST_FREE (refine_flags);
     p4est_ghost_destroy (gl_copy);
     p4est_destroy (forest_copy);
+
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[i], snapshot.iwtime, "Refine Loops");
   }
 
   /* accumulate and print statistics */
-
-
-  /* NEED TO IMPLEMENT TAGGING keep,refine,coarsen */
-
-
-
-  /* start overall timing */
-  mpiret = sc_MPI_Barrier (mpicomm);
-  SC_CHECK_MPI (mpiret);
-  sc_flopts_start (&fi);
-
-  conn4 = p4est_connectivity_new_byname (config_name);
-  SC_CHECK_ABORTF (conn4 != NULL, "Invalid connectivity name: %s\n",
-                   config_name);
-
-  sc_flops_snap (&fi, &snapshot);
-  conn = p6est_connectivity_new (conn4, NULL, height);
-  sc_flops_shot (&fi, &snapshot);
-  sc_stats_set1 (&stats[TIMINGS_CONNECTIVITY], snapshot.iwtime,
-                 "Connectivity");
-
-  p4est_connectivity_destroy (conn4);
-
-  sc_flops_snap (&fi, &snapshot);
-
 
 
 
