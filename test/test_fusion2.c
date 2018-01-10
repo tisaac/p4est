@@ -142,6 +142,10 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
 enum
 {
   FUSION_FULL_LOOP,
+  FUSION_TIME_REFINE,
+  FUSION_TIME_BALANCE,
+  FUSION_TIME_PARTITION,
+  FUSION_TIME_GHOST,
   FUSION_NUM_STATS
 };
 
@@ -159,7 +163,6 @@ main (int argc, char **argv)
   int                 type;
   int                 num_tests = 3;
   sc_statinfo_t       stats[FUSION_NUM_STATS];
-  sc_flopinfo_t       fi, snapshot;
   sc_options_t       *opt;
   int                 log_priority = SC_LP_ESSENTIAL;
   test_fusion_t       ctx;
@@ -208,12 +211,29 @@ main (int argc, char **argv)
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
   sc_stats_init (&stats[FUSION_FULL_LOOP], "Full loop");
+  sc_stats_init (&stats[FUSION_TIME_REFINE], "Local refinement");
+  sc_stats_init (&stats[FUSION_TIME_BALANCE], "Balance");
+  sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
+  sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
     int                *refine_flags;
     p4est_ghost_t      *gl_copy;
     refine_loop_t       loop_ctx;
+    sc_flopinfo_t       fi_full, snapshot_full;
+    sc_flopinfo_t       fi_refine, snapshot_refine;
+    sc_flopinfo_t       fi_balance, snapshot_balance;
+    sc_flopinfo_t       fi_partition, snapshot_partition;
+    sc_flopinfo_t       fi_ghost, snapshot_ghost;
+
+    if (!i) {
+      P4EST_GLOBAL_PRODUCTION ("Timing loop 0 (discarded)\n");
+    }
+    else {
+      P4EST_GLOBAL_PRODUCTIONF ("Timing loop %d\n", i);
+    }
+    sc_log_indent_push_count (p4est_package_id, 2);
 
     forest_copy = p4est_copy (p4est, 0 /* do not copy data */ );
 
@@ -225,7 +245,7 @@ main (int argc, char **argv)
 
     /* Once the leaves have been marked, we have sufficient information to
      * complete a refinement cycle: start the timing at this point */
-    sc_flops_snap (&fi, &snapshot);
+    sc_flops_snap (&fi_full, &snapshot_full);
 
     /* start the timing of one instance of the timing cycle */
     /* see sc_flops_snap() / sc_flops_shot() in timings2.c */
@@ -236,28 +256,53 @@ main (int argc, char **argv)
     /* TODO: conduct coarsening before refinement.  This requires making a
      * copy of refine_flags: creating one that is valid after coarsening */
 
+    sc_flops_snap (&fi_refine, &snapshot_refine);
     loop_ctx.counter = 0;
     loop_ctx.refine_flags = refine_flags;
 
     forest_copy->user_pointer = (void *) &loop_ctx;
     p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
+    sc_flops_shot (&fi_refine, &snapshot_refine);
+    if (i) {
+      sc_stats_accumulate (&stats[FUSION_TIME_REFINE],
+                           snapshot_refine.iwtime);
+    }
 
+    sc_flops_shot (&fi_balance, &snapshot_balance);
     p4est_balance (forest_copy, P4EST_CONNECT_FULL, NULL);
+    sc_flops_shot (&fi_balance, &snapshot_balance);
+    if (i) {
+      sc_stats_accumulate (&stats[FUSION_TIME_BALANCE],
+                           snapshot_balance.iwtime);
+    }
 
+    sc_flops_shot (&fi_partition, &snapshot_partition);
     p4est_partition (forest_copy, 0, NULL);
+    sc_flops_shot (&fi_partition, &snapshot_partition);
+    if (i) {
+      sc_stats_accumulate (&stats[FUSION_TIME_PARTITION],
+                           snapshot_partition.iwtime);
+    }
 
+    sc_flops_shot (&fi_ghost, &snapshot_ghost);
     gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
+    sc_flops_shot (&fi_ghost, &snapshot_ghost);
+    if (i) {
+      sc_stats_accumulate (&stats[FUSION_TIME_GHOST], snapshot_ghost.iwtime);
+    }
 
     /* end  the timing of one instance of the timing cycle */
-    sc_flops_shot (&fi, &snapshot);
+    sc_flops_shot (&fi_full, &snapshot_full);
     if (i) {
-      sc_stats_accumulate (&stats[FUSION_FULL_LOOP], snapshot.iwtime);
+      sc_stats_accumulate (&stats[FUSION_FULL_LOOP], snapshot_full.iwtime);
     }
 
     /* clean up */
     P4EST_FREE (refine_flags);
     p4est_ghost_destroy (gl_copy);
     p4est_destroy (forest_copy);
+
+    sc_log_indent_pop_count (p4est_package_id, 2);
   }
 
   /* accumulate and print statistics */
