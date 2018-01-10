@@ -36,7 +36,6 @@
 #include <sc_statistics.h>
 #include <sc_options.h>
 
-
 #ifndef P4_TO_P8
 static int          refine_level = 5;
 #else
@@ -45,7 +44,7 @@ static int          refine_level = 4;
 
 typedef struct
 {
-  int dummy;
+  int                 dummy;
 }
 test_fusion_t;
 
@@ -93,10 +92,58 @@ refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
   return 1;
 }
 
-static int refine_in_loop (p4est_t *p4est, p4est_topidx_t which_tree,
-                           p4est_quadrant_t *quad);
+typedef struct
+{
+  int                 counter;
+  int                *refine_flags;
+}
+refine_loop_t;
 
-static void mark_leaves (p4est_t *, int *, test_fusion_t *ctx);
+/* create an array of ints with values meaning:
+ *   0 : keep
+ *   1 : refine
+ *   2 : coarsen
+ */
+enum
+{
+  FUSION_KEEP = 0,
+  FUSION_REFINE,
+  FUSION_COARSEN
+};
+
+static int
+refine_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
+                p4est_quadrant_t * quad)
+{
+  int                 flag;
+  refine_loop_t      *loop_ctx = (refine_loop_t *) (p4est->user_pointer);
+
+  flag = (loop_ctx->refine_flags[loop_ctx->counter++]);
+  if (flag == FUSION_REFINE) {
+    return 1;
+  }
+  return 0;
+}
+
+static void
+mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
+{
+  p4est_locidx_t      i;
+  p4est_locidx_t      num_local = p4est->local_num_quadrants;
+
+  /* TODO: replace with a meaningful (or more than one meaningful, controlled
+   * by ctx) refinment pattern */
+  for (i = 0; i < num_local; i++) {
+    /* refine every other */
+    refine_flags[i] = (i & 1) ? FUSION_REFINE : FUSION_KEEP;
+  }
+}
+
+enum
+{
+  FUSION_FULL_LOOP,
+  FUSION_NUM_STATS
+};
 
 int
 main (int argc, char **argv)
@@ -106,34 +153,30 @@ main (int argc, char **argv)
   p4est_t            *p4est;
   p4est_connectivity_t *conn;
   p4est_ghost_t      *ghost;
-  int                 num_cycles = 2;
   int                 i;
-  p4est_lnodes_t     *lnodes;
+  p4est_lnodes_t     *lnodes;   /* runtime option: time lnodes construction */
   int                 first_argc;
   int                 type;
   int                 num_tests = 3;
-  sc_statinfo_t		  stats[num_tests+1];
-  sc_flopinfo_t		  fi, snapshot;
+  sc_statinfo_t       stats[FUSION_NUM_STATS];
+  sc_flopinfo_t       fi, snapshot;
   sc_options_t       *opt;
+  int                 log_priority = SC_LP_ESSENTIAL;
   test_fusion_t       ctx;
 
   /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
   mpicomm = sc_MPI_COMM_WORLD;
   SC_CHECK_MPI (mpiret);
-  sc_init (mpicomm,1, 1, NULL, SC_LP_DEFAULT);
-
-#ifndef P4EST_ENABLE_DEBUG 
-  sc_set_log_defaults (NULL, NULL, SC_LP_STATISTICS); 
-#endif 
-
-  p4est_init (NULL, SC_LP_DEFAULT);
+  sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
 
   /* process command line arguments */
   opt = sc_options_new (argv[0]);
 
   sc_options_add_int (opt, 'k', "num-tests", &num_tests, num_tests,
                       "The number of instances of timiing the fusion loop");
+  sc_options_add_int (opt, 'q', "quiet", &log_priority, log_priority,
+                      "Degree of quietude of output");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -142,6 +185,9 @@ main (int argc, char **argv)
     return 1;
   }
   sc_options_print_summary (p4est_package_id, SC_LP_PRODUCTION, opt);
+
+  sc_set_log_defaults (NULL, NULL, log_priority);
+  p4est_init (NULL, log_priority);
 
   /* set values in ctx here */
 
@@ -161,26 +207,25 @@ main (int argc, char **argv)
 
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
+  sc_stats_init (&stats[FUSION_FULL_LOOP], "Full loop");
+
   for (i = 0; i <= num_tests; i++) {
+    p4est_t            *forest_copy;
+    int                *refine_flags;
+    p4est_ghost_t      *gl_copy;
+    refine_loop_t       loop_ctx;
 
-    sc_flops_snap (&fi, &snapshot);
-    p4est_t *forest_copy;
-    int     *refine_flags;
-    p4est_ghost_t *gl_copy;
-
-    forest_copy = p4est_copy (p4est, 0 /* do not copy data */);
+    forest_copy = p4est_copy (p4est, 0 /* do not copy data */ );
 
     /* predefine which leaves we want to refine and coarsen */
-
-    /* create an array of ints with values meaning:
-     *   0 : keep
-     *   1 : refine
-     *   2 : coarsen
-     */
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
     mark_leaves (forest_copy, refine_flags, &ctx);
+
+    /* Once the leaves have been marked, we have sufficient information to
+     * complete a refinement cycle: start the timing at this point */
+    sc_flops_snap (&fi, &snapshot);
 
     /* start the timing of one instance of the timing cycle */
     /* see sc_flops_snap() / sc_flops_shot() in timings2.c */
@@ -188,8 +233,14 @@ main (int argc, char **argv)
     /* non-recursive refinement loop: the callback simply checks the flags
      * that we have defined for which leaves we want to refine */
 
+    /* TODO: conduct coarsening before refinement.  This requires making a
+     * copy of refine_flags: creating one that is valid after coarsening */
 
-    p4est_refine (forest_copy, 0 /* non-recursive */, refine_in_loop, NULL);
+    loop_ctx.counter = 0;
+    loop_ctx.refine_flags = refine_flags;
+
+    forest_copy->user_pointer = (void *) &loop_ctx;
+    p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
 
     p4est_balance (forest_copy, P4EST_CONNECT_FULL, NULL);
 
@@ -198,17 +249,21 @@ main (int argc, char **argv)
     gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
 
     /* end  the timing of one instance of the timing cycle */
+    sc_flops_shot (&fi, &snapshot);
+    if (i) {
+      sc_stats_accumulate (&stats[FUSION_FULL_LOOP], snapshot.iwtime);
+    }
 
     /* clean up */
     P4EST_FREE (refine_flags);
     p4est_ghost_destroy (gl_copy);
     p4est_destroy (forest_copy);
-
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[i], snapshot.iwtime, "Refine Loops");
   }
 
   /* accumulate and print statistics */
+  sc_stats_compute (mpicomm, FUSION_NUM_STATS, stats);
+  sc_stats_print (p4est_package_id, SC_LP_ESSENTIAL,
+                  FUSION_NUM_STATS, stats, 1, 1);
 
   /* clean up */
   p4est_ghost_destroy (ghost);
