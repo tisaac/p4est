@@ -49,6 +49,24 @@ typedef struct
 }
 test_fusion_t;
 
+enum
+{
+  TIMINGS_INIT,
+  TIMINGS_NUM_STATS
+};
+
+
+
+
+
+
+
+typedef struct
+{
+  int dummy;
+}
+test_fusion_t;
+
 static int
 refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
            p4est_quadrant_t * quadrant)
@@ -106,15 +124,21 @@ main (int argc, char **argv)
   int                 first_argc;
   int                 type;
   int                 num_tests = 3;
+  sc_statinfo_t		  stats[num_tests+1];
+  sc_flopinfo_t		  fi, snapshot;
   sc_options_t       *opt;
   test_fusion_t       ctx;
 
   /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
-  SC_CHECK_MPI (mpiret);
   mpicomm = sc_MPI_COMM_WORLD;
+  SC_CHECK_MPI (mpiret);
+  sc_init (mpicomm,1, 1, NULL, SC_LP_DEFAULT);
 
-  sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
+#ifndef P4EST_ENABLE_DEBUG 
+  sc_set_log_defaults (NULL, NULL, SC_LP_STATISTICS); 
+#endif 
+
   p4est_init (NULL, SC_LP_DEFAULT);
 
   /* process command line arguments */
@@ -150,6 +174,8 @@ main (int argc, char **argv)
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
   for (i = 0; i <= num_tests; i++) {
+
+    sc_flops_snap (&fi, &snapshot);
     p4est_t *forest_copy;
     int     *refine_flags;
     p4est_ghost_t *gl_copy;
@@ -166,6 +192,9 @@ main (int argc, char **argv)
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
+
+
+
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     /* start the timing of one instance of the timing cycle */
@@ -173,6 +202,7 @@ main (int argc, char **argv)
 
     /* non-recursive refinement loop: the callback simply checks the flags
      * that we have defined for which leaves we want to refine */
+
 
     p4est_refine (forest_copy, 0 /* non-recursive */, refine_in_loop, NULL);
 
@@ -188,6 +218,9 @@ main (int argc, char **argv)
     P4EST_FREE (refine_flags);
     p4est_ghost_destroy (gl_copy);
     p4est_destroy (forest_copy);
+
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[i], snapshot.iwtime, "Refine Loops");
   }
 
   /* accumulate and print statistics */
