@@ -59,33 +59,42 @@ refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
            p4est_quadrant_t * quadrant)
 {
   int                 cid;
+  int                 eps = 0.05 * (P4EST_ROOT_LEN / 2);
+  int                 center = (quadrant->x - (P4EST_ROOT_LEN / 2) ^ 2 +
+                                quadrant->y - (P4EST_ROOT_LEN / 2) ^ 2 +
+#ifdef P4_TO_P8
+                                quadrant->z - (P4EST_ROOT_LEN / 2) ^ 2
+#endif
+    );
 
-  if (which_tree == 2 || which_tree == 3) {
+  /* Don't refine deeper than a given maximum level. */
+  if (quadrant->level > refine_level) {
     return 0;
   }
 
   cid = p4est_quadrant_child_id (quadrant);
 
+  /* Trying to emulate refining edge around the circle *
+   * with margin being 0.05 of the ROOT_LEN.               */
+  if (center <= (P4EST_ROOT_LEN / 2 + eps) ^ 2 &&
+      center >= (P4EST_ROOT_LEN / 2 - eps) ^ 2) {
+    return 1;
+  }
+
+  /* Filter out large enough quadrants to refine.
+   * && or || ??                                        */
   if (cid == P4EST_CHILDREN - 1 ||
-      (quadrant->x >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - 2) &&
-       quadrant->y >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - 2)
+      (quadrant->x >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - refine_level) &&
+       quadrant->y >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - refine_level)
 #ifdef P4_TO_P8
-       && quadrant->z >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - 2)
+       && quadrant->z >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - refine_level)
 #endif
       )) {
     return 1;
   }
+
+  /* from ghost. what is which_tree ?? */
   if ((int) quadrant->level >= (refine_level - (int) (which_tree % 3))) {
-    return 0;
-  }
-  if (quadrant->level == 1 && cid == 2) {
-    return 1;
-  }
-  if (quadrant->x == P4EST_QUADRANT_LEN (2) &&
-      quadrant->y == P4EST_LAST_OFFSET (2)) {
-    return 1;
-  }
-  if (quadrant->y >= P4EST_QUADRANT_LEN (2)) {
     return 0;
   }
 
@@ -142,6 +151,7 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
 enum
 {
   FUSION_FULL_LOOP,
+  FUSION_TIME_COARSEN,
   FUSION_TIME_REFINE,
   FUSION_TIME_BALANCE,
   FUSION_TIME_PARTITION,
@@ -193,6 +203,8 @@ main (int argc, char **argv)
   p4est_init (NULL, log_priority);
 
   /* set values in ctx here */
+  /* random 1 for now */
+  ctx.dummy = 1;
 
 #ifndef P4_TO_P8
   conn = p4est_connectivity_new_moebius ();
@@ -218,7 +230,7 @@ main (int argc, char **argv)
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
-    int                *refine_flags;
+    int                *refine_flags, *rflags_copy;
     p4est_ghost_t      *gl_copy;
     refine_loop_t       loop_ctx;
     sc_flopinfo_t       fi_full, snapshot_full;
@@ -226,6 +238,7 @@ main (int argc, char **argv)
     sc_flopinfo_t       fi_balance, snapshot_balance;
     sc_flopinfo_t       fi_partition, snapshot_partition;
     sc_flopinfo_t       fi_ghost, snapshot_ghost;
+    sc_flopinfo_t       fi_coarsen, snapshot_coarsen;
 
     if (!i) {
       P4EST_GLOBAL_PRODUCTION ("Timing loop 0 (discarded)\n");
@@ -255,6 +268,17 @@ main (int argc, char **argv)
 
     /* TODO: conduct coarsening before refinement.  This requires making a
      * copy of refine_flags: creating one that is valid after coarsening */
+
+    sc_flops_snap (&fi_coarsen, &snapshot_coarsen);
+
+    /* coarsen */
+    rflags_copy = P4EST_STRDUP (refine_flags);
+
+    sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
+    if (i) {
+      sc_stats_accumulate (&stats[FUSION_TIME_COARSEN],
+                           snapshot_coarsen.iwtime);
+    }
 
     sc_flops_snap (&fi_refine, &snapshot_refine);
     loop_ctx.counter = 0;
