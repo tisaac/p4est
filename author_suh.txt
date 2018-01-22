@@ -1,0 +1,1 @@
+I attribute all my contribution to p4est under FreeBSD license. Hansol "David" Suh (dhsuh@gatech.edu)
