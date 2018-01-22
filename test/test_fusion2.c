@@ -44,7 +44,17 @@ static int          refine_level = 4;
 
 typedef struct
 {
-  int                 dummy;
+  double              time;
+  double              radius;
+  double              x0[P4EST_DIM];
+  double              velocity[P4EST_DIM];
+  int                 max_level;
+}
+fusion_sphere_t;
+
+typedef struct
+{
+  fusion_sphere_t    *sphere;
 }
 test_fusion_t;
 
@@ -54,51 +64,100 @@ enum
   TIMINGS_NUM_STATS
 };
 
+/* Given in (x,y,[z],t), an initial position, a velocity, and a radius,
+ * answer the question: is this point inside the ball? */
+static int
+in_sphere (const double coordinate[P4EST_DIM], double time, double radius,
+           const double x0[P4EST_DIM], const double velocity[P4EST_DIM])
+{
+  double              xTime[P4EST_DIM]; /* The center at the current time */
+  int                 i;
+  double              dist = 0.;
+
+  for (i = 0; i < P4EST_DIM; i++) {
+    xTime[i] = x0[i] + time * velocity[i];
+    dist += (coordinate[i] - xTime[i]) * (coordinate[i] - xTime[i]);
+  }
+
+  if (dist < radius * radius) {
+    return 1;
+  }
+  return 0;
+}
+
+static int
+quadrant_on_sphere_boundary (p4est_t * p4est, p4est_locidx_t which_tree,
+                             p4est_quadrant_t * q, double time, double radius,
+                             const double x0[P4EST_DIM],
+                             const double velocity[P4EST_DIM])
+{
+  int                 i;
+  int                 inside = -1;
+  p4est_connectivity_t *conn = p4est->connectivity;
+
+  p4est_qcoord_t      h = P4EST_QUADRANT_LEN (q->level);
+
+  for (i = 0; i < P4EST_CHILDREN; i++) {
+    p4est_qcoord_t      tree_coord[P4EST_DIM];
+    double              coordinate[3];
+    int                 d, this_inside;
+
+    tree_coord[0] = q->x;
+    tree_coord[1] = q->y;
+#ifdef P4_TO_P8
+    tree_coord[2] = q->z;
+#endif
+
+    for (d = 0; d < P4EST_DIM; d++) {
+      if (i & (1 << d)) {
+        tree_coord[d] += h;
+      }
+    }
+
+#ifndef P4_TO_P8
+    p4est_qcoord_to_vertex (conn, which_tree,
+                            tree_coord[0], tree_coord[1], coordinate);
+#else
+    p8est_qcoord_to_vertex (conn, which_tree,
+                            tree_coord[0], tree_coord[1], tree_coord[2],
+                            coordinate);
+#endif
+
+    this_inside = in_sphere (coordinate, time, radius, x0, velocity);
+    if (i) {
+      inside = this_inside;
+    }
+    else {
+      if (this_inside != inside) {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+static int
+refine_sphere_boundary (p4est_t * p4est, p4est_topidx_t which_tree,
+                        p4est_quadrant_t * quadrant)
+{
+  fusion_sphere_t    *sphere = (fusion_sphere_t *) p4est->user_pointer;
+
+  if (quadrant->level >= sphere->max_level) {
+    return 0;
+  }
+  return quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
+                                      sphere->time, sphere->radius,
+                                      sphere->x0, sphere->velocity);
+}
+
 static int
 refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
            p4est_quadrant_t * quadrant)
 {
-  int                 cid;
-  int                 eps = 0.05 * (P4EST_ROOT_LEN / 2);
-  int                 center = (quadrant->x - (P4EST_ROOT_LEN / 2) ^ 2 +
-                                quadrant->y - (P4EST_ROOT_LEN / 2) ^ 2 +
-#ifdef P4_TO_P8
-                                quadrant->z - (P4EST_ROOT_LEN / 2) ^ 2
-#endif
-    );
+  /* for now, just call refine_sphere_boundary:
+   * TODO: allow for other types of refinement */
 
-  /* Don't refine deeper than a given maximum level. */
-  if (quadrant->level > refine_level) {
-    return 0;
-  }
-
-  cid = p4est_quadrant_child_id (quadrant);
-
-  /* Trying to emulate refining edge around the circle *
-   * with margin being 0.05 of the ROOT_LEN.               */
-  if (center <= (P4EST_ROOT_LEN / 2 + eps) ^ 2 &&
-      center >= (P4EST_ROOT_LEN / 2 - eps) ^ 2) {
-    return 1;
-  }
-
-  /* Filter out large enough quadrants to refine.
-   * && or || ??                                        */
-  if (cid == P4EST_CHILDREN - 1 ||
-      (quadrant->x >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - refine_level) &&
-       quadrant->y >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - refine_level)
-#ifdef P4_TO_P8
-       && quadrant->z >= P4EST_LAST_OFFSET (P4EST_MAXLEVEL - refine_level)
-#endif
-      )) {
-    return 1;
-  }
-
-  /* from ghost. what is which_tree ?? */
-  if ((int) quadrant->level >= (refine_level - (int) (which_tree % 3))) {
-    return 0;
-  }
-
-  return 1;
+  return refine_on_sphere_boundary (p4est, which_tree, quadrant);
 }
 
 typedef struct
@@ -139,12 +198,28 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
 {
   p4est_locidx_t      i;
   p4est_locidx_t      num_local = p4est->local_num_quadrants;
+  p4est_connectivity_t *conn = p4est->connectivity;
+  p4est_topidx_t      num_trees = conn->num_trees, t;
 
   /* TODO: replace with a meaningful (or more than one meaningful, controlled
    * by ctx) refinment pattern */
-  for (i = 0; i < num_local; i++) {
-    /* refine every other */
-    refine_flags[i] = (i & 1) ? FUSION_REFINE : FUSION_KEEP;
+
+  p4est->user_pointer = (void *) &(ctx->sphere);
+  for (t = 0, i = 0; t < num_trees; t++) {
+    p4est_tree_t       *tree = p4est_tree_array_index (p4est->trees, t);
+    sc_array_t         *quadrants = &tree.quadrants;
+    p4est_locidx_t      num_quadrants =
+      (p4est_locidx_t) quadrants->elem_count;
+    p4est_locidx_t      j;
+
+    for (j = 0; j < num_quadrants; j++, i++) {
+      p4est_quadrant_t   *q =
+        p4est_quadrant_array_index (quadrants, (size_t) j);
+      int                 on_boundary;
+
+      on_boundary = refine_sphere_boundary (p4est, t, quadrant);
+      refine_flags[i] = (on_boundary) ? FUSION_REFINE : FUSION_KEEP;
+    }
   }
 }
 
@@ -175,7 +250,22 @@ main (int argc, char **argv)
   sc_statinfo_t       stats[FUSION_NUM_STATS];
   sc_options_t       *opt;
   int                 log_priority = SC_LP_ESSENTIAL;
+  fusion_sphere_t     sphere;
   test_fusion_t       ctx;
+
+  /* initialize default values for sphere:
+   * TODO: make configurable */
+  sphere.time = 0.;
+  sphere.radius = 0.25;
+  for (i = 0; i < P4EST_DIM; i++) {
+    sphere.x0[i] = 0.5;
+  }
+  sphere.velocity[0] = 0.1;
+  sphere.velocity[1] = 0.02;
+#ifdef P4_TO_P8
+  sphere.velocity[2] = -0.05;
+#endif
+  sphere.max_level = max_level;
 
   /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
@@ -204,7 +294,7 @@ main (int argc, char **argv)
 
   /* set values in ctx here */
   /* random 1 for now */
-  ctx.dummy = 1;
+  ctx.sphere = &sphere;
 
 #ifndef P4_TO_P8
   conn = p4est_connectivity_new_moebius ();
@@ -214,6 +304,7 @@ main (int argc, char **argv)
 
   p4est = p4est_new (mpicomm, conn, 0, NULL, NULL);
 
+  p4est->user_pointer = (void *) &sphere;
   p4est_refine (p4est, 1, refine_fn, NULL);
 
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
@@ -254,6 +345,7 @@ main (int argc, char **argv)
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
+    sphere.time = 1.;
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     /* Once the leaves have been marked, we have sufficient information to
