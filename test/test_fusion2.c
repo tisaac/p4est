@@ -26,11 +26,13 @@
 #include <p4est_bits.h>
 #include <p4est_ghost.h>
 #include <p4est_lnodes.h>
+#include <p4est_extended.h>
 #else
 #include <p8est_bits.h>
 #include <p8est.h>
 #include <p8est_ghost.h>
 #include <p8est_lnodes.h>
+#include <p8est_extended.h>
 #endif
 #include <sc_flops.h>
 #include <sc_statistics.h>
@@ -55,7 +57,6 @@ fusion_sphere_t;
 typedef struct
 {
   fusion_sphere_t    *sphere;
-  int                 context;  // Whether refine or coarsen
 }
 test_fusion_t;
 
@@ -157,12 +158,12 @@ coarsen_sphere_int_ext (p4est_t * p4est, p4est_topidx_t which_tree,
 {
   fusion_sphere_t    *sphere = (fusion_sphere_t *) p4est->user_pointer;
 
-  if (quadrant->level = <1) {
+  if (quadrant->level <= 1) {   /* TODO: make this configurable? */
     return 0;
   }
-  return quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
-                                      sphere->time, sphere->radius,
-                                      sphere->x0, sphere->velocity);
+  return ~quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
+                                       sphere->time, sphere->radius,
+                                       sphere->x0, sphere->velocity);
 }
 
 static int
@@ -172,7 +173,7 @@ refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
   /* for now, just call refine_sphere_boundary:
    * TODO: allow for other types of refinement */
 
-  return refine_on_sphere_boundary (p4est, which_tree, quadrant);
+  return refine_sphere_boundary (p4est, which_tree, quadrant);
 }
 
 typedef struct
@@ -208,11 +209,65 @@ refine_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
   return 0;
 }
 
+typedef struct
+{
+  int                 counter_in;
+  int                 counter_out;
+  int                *refine_flags;
+  int                *rflags_copy;
+}
+coarsen_loop_t;
+
+static int
+coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
+                 p4est_quadrant_t * quads[])
+{
+  int                 i;
+  coarsen_loop_t     *loop_ctx = (coarsen_loop_t *) (p4est->user_pointer);
+  int                 flag;
+
+  for (i = 0; i < P4EST_CHILDREN; i++) {
+
+    if (quads[i] == NULL) {
+      /* this coarsen callback is not being called on a family: coarsening
+       * isn't possible, but we need to advance our counters */
+      break;
+    }
+    flag = loop_ctx->refine_flags[loop_ctx->counter_in + i];
+    if (flag != FUSION_COARSEN) {
+      /* One of the siblings does not want to coarsen, coarsening is not
+       * possible */
+      break;
+    }
+  }
+  if (i == P4EST_CHILDREN) {
+    /* all agree to coarsen */
+    /* advance the input counter by P4EST_CHILDREN */
+    loop_ctx->counter_in += P4EST_CHILDREN;
+    /* the new forest will have one parent in its place, that we do not want
+     * to refine */
+    loop_ctx->rflags_copy[loop_ctx->counter_out++] = FUSION_KEEP;
+    return 1;
+  }
+
+  /* do not coarsen, copy flags */
+  for (i = 0; i < P4EST_CHILDREN; i++) {
+    if (quads[i] == NULL) {
+      /* no more quadrants */
+      break;
+    }
+    flag = loop_ctx->refine_flags[loop_ctx->counter_in++];
+    loop_ctx->rflags_copy[loop_ctx->counter_out++] =
+      (flag == FUSION_REFINE) ? FUSION_REFINE : FUSION_KEEP;
+  }
+
+  return 0;
+}
+
 static void
 mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
 {
   p4est_locidx_t      i;
-  p4est_locidx_t      num_local = p4est->local_num_quadrants;
   p4est_connectivity_t *conn = p4est->connectivity;
   p4est_topidx_t      num_trees = conn->num_trees, t;
 
@@ -222,7 +277,7 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
   p4est->user_pointer = (void *) &(ctx->sphere);
   for (t = 0, i = 0; t < num_trees; t++) {
     p4est_tree_t       *tree = p4est_tree_array_index (p4est->trees, t);
-    sc_array_t         *quadrants = &tree.quadrants;
+    sc_array_t         *quadrants = &(tree->quadrants);
     p4est_locidx_t      num_quadrants =
       (p4est_locidx_t) quadrants->elem_count;
     p4est_locidx_t      j;
@@ -230,28 +285,14 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
     for (j = 0; j < num_quadrants; j++, i++) {
       p4est_quadrant_t   *q =
         p4est_quadrant_array_index (quadrants, (size_t) j);
-      int                 lv = q->level;
-      int                 on_boundary;
-      int                 int_ext;
-      int                 c_count;
-      if (ctx->context == 0) {
-        on_boundary = refine_sphere_boundary (p4est, t, quadrants);
-        refine_flags[i] = (on_boundary) ? FUSION_REFINE : FUSION_KEEP;
+
+      /* TODO: keep track of contexts better */
+      refine_flags[i] = FUSION_KEEP;
+      if (refine_sphere_boundary (p4est, t, q)) {
+        refine_flags[i] = FUSION_REFINE;
       }
-      else {
-        /* need to make it s.t. it does coarsening check on 
-         * octants on same level. Currently, it is done on
-         * for all quadrants, which needs to be fixed */
-        int_ext = coarsen_sphere_int_ext (p4est, t, quadrants);
-        c_count += int_ext;
-      }
-    }
-    if (ctx->context != 0) {
-      if (c_count != 0) {
-        refine_flags[i] = FUSION_KEEP;
-      }
-      else {
-        refine_flags[i] = (on_boundary) ? FUSION_COARSEN : FUSION_KEEP;
+      else if (coarsen_sphere_int_ext (p4est, t, q)) {
+        refine_flags[i] = FUSION_COARSEN;
       }
     }
   }
@@ -299,7 +340,7 @@ main (int argc, char **argv)
 #ifdef P4_TO_P8
   sphere.velocity[2] = -0.05;
 #endif
-  sphere.max_level = max_level;
+  sphere.max_level = refine_level;
 
   /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
@@ -329,7 +370,6 @@ main (int argc, char **argv)
   /* set values in ctx here */
   /* random 1 for now */
   ctx.sphere = &sphere;
-  ctx.context = 0;              // 0 means refine, rest coarsen
 
 #ifndef P4_TO_P8
   conn = p4est_connectivity_new_moebius ();
@@ -358,7 +398,8 @@ main (int argc, char **argv)
     p4est_t            *forest_copy;
     int                *refine_flags, *rflags_copy;
     p4est_ghost_t      *gl_copy;
-    refine_loop_t       loop_ctx;
+    refine_loop_t       ref_loop_ctx;
+    coarsen_loop_t      crs_loop_ctx;
     sc_flopinfo_t       fi_full, snapshot_full;
     sc_flopinfo_t       fi_refine, snapshot_refine;
     sc_flopinfo_t       fi_balance, snapshot_balance;
@@ -381,7 +422,6 @@ main (int argc, char **argv)
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
     sphere.time = 1.;
-    ctx.context = 0;
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     /* Once the leaves have been marked, we have sufficient information to
@@ -397,14 +437,23 @@ main (int argc, char **argv)
     /* TODO: conduct coarsening before refinement.  This requires making a
      * copy of refine_flags: creating one that is valid after coarsening */
 
+    /* make space for copy of flags */
+
+    rflags_copy = P4EST_ALLOC (int, p4est->local_num_quadrants);
+
     sc_flops_snap (&fi_coarsen, &snapshot_coarsen);
 
-    /* coarsen 
-       copy the flags. Then coarsen the interior and exterior of the circle */
-    rflags_copy = P4EST_STRDUP (refine_flags);
+    /* coarsen copy the flags. Then coarsen the interior and exterior of the
+     * circle */
 
-    ctx.context = 1;            // coarsen
-    mark_leaves (forest_copy, rflags_copy, &ctx);
+    crs_loop_ctx.counter_in = 0;
+    crs_loop_ctx.counter_out = 0;
+    crs_loop_ctx.refine_flags = refine_flags;
+    crs_loop_ctx.rflags_copy = rflags_copy;
+    forest_copy->user_pointer = (void *) &crs_loop_ctx;
+    p4est_coarsen_ext (forest_copy, 0 /* non-recursive */ ,
+                       1 /* callback on ophans */ , coarsen_in_loop, NULL,
+                       NULL);
 
     sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
     if (i) {
@@ -413,10 +462,10 @@ main (int argc, char **argv)
     }
 
     sc_flops_snap (&fi_refine, &snapshot_refine);
-    loop_ctx.counter = 0;
-    loop_ctx.refine_flags = refine_flags;
+    ref_loop_ctx.counter = 0;
+    ref_loop_ctx.refine_flags = rflags_copy;
 
-    forest_copy->user_pointer = (void *) &loop_ctx;
+    forest_copy->user_pointer = (void *) &ref_loop_ctx;
     p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
     sc_flops_shot (&fi_refine, &snapshot_refine);
     if (i) {
