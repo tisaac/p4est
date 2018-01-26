@@ -55,6 +55,7 @@ fusion_sphere_t;
 typedef struct
 {
   fusion_sphere_t    *sphere;
+  int				  context; // Whether refine or coarsen
 }
 test_fusion_t;
 
@@ -136,6 +137,7 @@ quadrant_on_sphere_boundary (p4est_t * p4est, p4est_locidx_t which_tree,
   return 0;
 }
 
+
 static int
 refine_sphere_boundary (p4est_t * p4est, p4est_topidx_t which_tree,
                         p4est_quadrant_t * quadrant)
@@ -149,6 +151,22 @@ refine_sphere_boundary (p4est_t * p4est, p4est_topidx_t which_tree,
                                       sphere->time, sphere->radius,
                                       sphere->x0, sphere->velocity);
 }
+
+
+static int
+coarsen_sphere_int_ext (p4est_t * p4est, p4est_topidx_t which_tree,
+                        p4est_quadrant_t * quadrant)
+{
+  fusion_sphere_t    *sphere = (fusion_sphere_t *) p4est->user_pointer;
+
+  if (quadrant->level =<  1) {
+    return 0;
+  }
+  return quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
+                                      sphere->time, sphere->radius,
+                                      sphere->x0, sphere->velocity);
+}
+
 
 static int
 refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
@@ -215,11 +233,30 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
     for (j = 0; j < num_quadrants; j++, i++) {
       p4est_quadrant_t   *q =
         p4est_quadrant_array_index (quadrants, (size_t) j);
+	  int				  lv = q->level;
       int                 on_boundary;
-
-      on_boundary = refine_sphere_boundary (p4est, t, quadrant);
-      refine_flags[i] = (on_boundary) ? FUSION_REFINE : FUSION_KEEP;
-    }
+	  int 				  int_ext;
+	  int				  c_count;
+		if (ctx->context == 0){
+	      on_boundary = refine_sphere_boundary (p4est, t, quadrants);
+          refine_flags[i] = (on_boundary) ? FUSION_REFINE : FUSION_KEEP;
+		}
+	    else{
+			/* need to make it s.t. it does coarsening check on 
+			 * octants on same level. Currently, it is done on
+			 * for all quadrants, which needs to be fixed */
+	      int_ext = coarsen_sphere_int_ext (p4est, t, quadrants);
+		  c_count += int_ext;
+		}	
+	}
+		if (ctx->context != 0){
+			if (c_count != 0){
+	            refine_flags[i] = FUSION_KEEP;
+			}
+			else{
+	            refine_flags[i] = (on_boundary) ? FUSION_COARSEN : FUSION_KEEP;
+			}
+		}
   }
 }
 
@@ -295,6 +332,7 @@ main (int argc, char **argv)
   /* set values in ctx here */
   /* random 1 for now */
   ctx.sphere = &sphere;
+  ctx.context = 0; // 0 means refine, rest coarsen
 
 #ifndef P4_TO_P8
   conn = p4est_connectivity_new_moebius ();
@@ -346,6 +384,7 @@ main (int argc, char **argv)
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
     sphere.time = 1.;
+	ctx.context = 0;
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     /* Once the leaves have been marked, we have sufficient information to
@@ -363,8 +402,12 @@ main (int argc, char **argv)
 
     sc_flops_snap (&fi_coarsen, &snapshot_coarsen);
 
-    /* coarsen */
+    /* coarsen 
+	   copy the flags. Then coarsen the interior and exterior of the circle */
     rflags_copy = P4EST_STRDUP (refine_flags);
+
+	ctx.context = 1; // coarsen
+	mark_leaves (forest_copy, rflags_copy, &ctx);
 
     sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
     if (i) {
