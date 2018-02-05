@@ -389,6 +389,7 @@ main (int argc, char **argv)
 #endif
 
   p4est = p4est_new (mpicomm, conn, 0, NULL, NULL);
+  p4est->user_pointer = (void *) &ctx;
 
   p4est_refine (p4est, 1, refine_fn, NULL);
 
@@ -426,6 +427,7 @@ main (int argc, char **argv)
     sc_log_indent_push_count (p4est_package_id, 2);
 
     forest_copy = p4est_copy (p4est, 0 /* do not copy data */ );
+    forest_copy->user_pointer = (void *) &ctx;
 
     /* predefine which leaves we want to refine and coarsen */
 
@@ -481,6 +483,8 @@ main (int argc, char **argv)
       sc_stats_accumulate (&stats[FUSION_TIME_REFINE],
                            snapshot_refine.iwtime);
     }
+
+    P4EST_FREE (rflags_copy);
 
     sc_flops_shot (&fi_balance, &snapshot_balance);
     p4est_balance (forest_copy, P4EST_CONNECT_FULL, NULL);
