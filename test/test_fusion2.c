@@ -56,9 +56,33 @@ fusion_sphere_t;
 
 typedef struct
 {
-  fusion_sphere_t    *sphere;
+  int                 counter;
+  int                *refine_flags;
 }
-test_fusion_t;
+refine_loop_t;
+
+typedef struct
+{
+  int                 counter_in;
+  int                 counter_out;
+  int                *refine_flags;
+  int                *rflags_copy;
+}
+coarsen_loop_t;
+
+typedef struct
+{
+  fusion_sphere_t    *sphere;
+  refine_loop_t      *refine_loop;
+  coarsen_loop_t     *coarsen_loop;
+}
+fusion_ctx_t;
+
+static inline fusion_ctx_t *
+p4est_get_fusion_ctx (p4est_t * p4est)
+{
+  return (fusion_ctx_t *) p4est->user_pointer;
+}
 
 enum
 {
@@ -142,7 +166,8 @@ static int
 refine_sphere_boundary (p4est_t * p4est, p4est_topidx_t which_tree,
                         p4est_quadrant_t * quadrant)
 {
-  fusion_sphere_t    *sphere = (fusion_sphere_t *) p4est->user_pointer;
+  fusion_ctx_t       *ctx = p4est_get_fusion_ctx (p4est);
+  fusion_sphere_t    *sphere = ctx->sphere;
 
   if (quadrant->level >= sphere->max_level) {
     return 0;
@@ -156,7 +181,8 @@ static int
 coarsen_sphere_int_ext (p4est_t * p4est, p4est_topidx_t which_tree,
                         p4est_quadrant_t * quadrant)
 {
-  fusion_sphere_t    *sphere = (fusion_sphere_t *) p4est->user_pointer;
+  fusion_ctx_t       *ctx = p4est_get_fusion_ctx (p4est);
+  fusion_sphere_t    *sphere = ctx->sphere;
 
   if (quadrant->level <= 1) {   /* TODO: make this configurable? */
     return 0;
@@ -176,13 +202,6 @@ refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
   return refine_sphere_boundary (p4est, which_tree, quadrant);
 }
 
-typedef struct
-{
-  int                 counter;
-  int                *refine_flags;
-}
-refine_loop_t;
-
 /* create an array of ints with values meaning:
  *   0 : keep
  *   1 : refine
@@ -200,7 +219,8 @@ refine_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
                 p4est_quadrant_t * quad)
 {
   int                 flag;
-  refine_loop_t      *loop_ctx = (refine_loop_t *) (p4est->user_pointer);
+  fusion_ctx_t       *ctx = p4est_get_fusion_ctx (p4est);
+  refine_loop_t      *loop_ctx = ctx->refine_loop;
 
   flag = (loop_ctx->refine_flags[loop_ctx->counter++]);
   if (flag == FUSION_REFINE) {
@@ -209,21 +229,13 @@ refine_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
   return 0;
 }
 
-typedef struct
-{
-  int                 counter_in;
-  int                 counter_out;
-  int                *refine_flags;
-  int                *rflags_copy;
-}
-coarsen_loop_t;
-
 static int
 coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
                  p4est_quadrant_t * quads[])
 {
   int                 i;
-  coarsen_loop_t     *loop_ctx = (coarsen_loop_t *) (p4est->user_pointer);
+  fusion_ctx_t       *ctx = p4est_get_fusion_ctx (p4est);
+  coarsen_loop_t     *loop_ctx = ctx->coarsen_loop;
   int                 flag;
 
   for (i = 0; i < P4EST_CHILDREN; i++) {
@@ -265,7 +277,7 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
 }
 
 static void
-mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
+mark_leaves (p4est_t * p4est, int *refine_flags, fusion_ctx_t * ctx)
 {
   p4est_locidx_t      i;
   p4est_connectivity_t *conn = p4est->connectivity;
@@ -274,7 +286,6 @@ mark_leaves (p4est_t * p4est, int *refine_flags, test_fusion_t * ctx)
   /* TODO: replace with a meaningful (or more than one meaningful, controlled
    * by ctx) refinment pattern */
 
-  p4est->user_pointer = (void *) &(ctx->sphere);
   for (t = 0, i = 0; t < num_trees; t++) {
     p4est_tree_t       *tree = p4est_tree_array_index (p4est->trees, t);
     sc_array_t         *quadrants = &(tree->quadrants);
@@ -325,8 +336,8 @@ main (int argc, char **argv)
   sc_statinfo_t       stats[FUSION_NUM_STATS];
   sc_options_t       *opt;
   int                 log_priority = SC_LP_ESSENTIAL;
+  fusion_ctx_t        ctx;
   fusion_sphere_t     sphere;
-  test_fusion_t       ctx;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -379,7 +390,6 @@ main (int argc, char **argv)
 
   p4est = p4est_new (mpicomm, conn, 0, NULL, NULL);
 
-  p4est->user_pointer = (void *) &sphere;
   p4est_refine (p4est, 1, refine_fn, NULL);
 
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
@@ -450,7 +460,7 @@ main (int argc, char **argv)
     crs_loop_ctx.counter_out = 0;
     crs_loop_ctx.refine_flags = refine_flags;
     crs_loop_ctx.rflags_copy = rflags_copy;
-    forest_copy->user_pointer = (void *) &crs_loop_ctx;
+    ctx.coarsen_loop = &crs_loop_ctx;
     p4est_coarsen_ext (forest_copy, 0 /* non-recursive */ ,
                        1 /* callback on ophans */ , coarsen_in_loop, NULL,
                        NULL);
@@ -464,8 +474,7 @@ main (int argc, char **argv)
     sc_flops_snap (&fi_refine, &snapshot_refine);
     ref_loop_ctx.counter = 0;
     ref_loop_ctx.refine_flags = rflags_copy;
-
-    forest_copy->user_pointer = (void *) &ref_loop_ctx;
+    ctx.refine_loop = &ref_loop_ctx;
     p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
     sc_flops_shot (&fi_refine, &snapshot_refine);
     if (i) {
