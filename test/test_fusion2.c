@@ -27,12 +27,14 @@
 #include <p4est_ghost.h>
 #include <p4est_lnodes.h>
 #include <p4est_extended.h>
+#include <p4est_vtk.h>
 #else
 #include <p8est_bits.h>
 #include <p8est.h>
 #include <p8est_ghost.h>
 #include <p8est_lnodes.h>
 #include <p8est_extended.h>
+#include <p8est_vtk.h>
 #endif
 #include <sc_flops.h>
 #include <sc_statistics.h>
@@ -75,6 +77,7 @@ typedef struct
   fusion_sphere_t    *sphere;
   refine_loop_t      *refine_loop;
   coarsen_loop_t     *coarsen_loop;
+  const char         *viz_name;
 }
 fusion_ctx_t;
 
@@ -150,7 +153,7 @@ quadrant_on_sphere_boundary (p4est_t * p4est, p4est_locidx_t which_tree,
 #endif
 
     this_inside = in_sphere (coordinate, time, radius, x0, velocity);
-    if (i) {
+    if (!i) {
       inside = this_inside;
     }
     else {
@@ -320,6 +323,83 @@ enum
   FUSION_NUM_STATS
 };
 
+static double
+fusion_compute_h (p4est_t *p4est)
+{
+  p4est_topidx_t flt, llt, t;
+  double         h_min = -1., h_min_global;
+  int            mpierr;
+
+  flt = p4est->first_local_tree;
+  llt = p4est->last_local_tree;
+
+  for (t = flt; t <= llt; t++) {
+    p4est_tree_t       *tree = p4est_tree_array_index (p4est->trees, t);
+    sc_array_t         *quadrants = &(tree->quadrants);
+    p4est_locidx_t      num_quadrants =
+      (p4est_locidx_t) quadrants->elem_count;
+    p4est_locidx_t      j;
+
+    for (j = 0; j < num_quadrants; j++) {
+      p4est_locidx_t     i;
+      p4est_quadrant_t   *q =
+        p4est_quadrant_array_index (quadrants, (size_t) j);
+      double first_coord[3] = {0., 0., 0.};
+      p4est_qcoord_t      h = P4EST_QUADRANT_LEN (q->level);
+
+      for (i = 0; i < P4EST_CHILDREN; i++) {
+        p4est_qcoord_t      tree_coord[P4EST_DIM];
+        double              coordinate[3];
+        int                 d;
+
+        tree_coord[0] = q->x;
+        tree_coord[1] = q->y;
+#ifdef P4_TO_P8
+        tree_coord[2] = q->z;
+#endif
+
+        for (d = 0; d < P4EST_DIM; d++) {
+          if (i & (1 << d)) {
+            tree_coord[d] += h;
+          }
+        }
+
+#ifndef P4_TO_P8
+        p4est_qcoord_to_vertex (p4est->connectivity, t,
+                                tree_coord[0], tree_coord[1], coordinate);
+#else
+        p8est_qcoord_to_vertex (p4est->connectivity, t,
+                                tree_coord[0], tree_coord[1], tree_coord[2],
+                                coordinate);
+#endif
+        if (!i) {
+          for (d = 0; d < P4EST_DIM; d++) {
+            first_coord[d] = coordinate[d];
+          }
+        } else {
+          double dist = 0.;
+
+          for (d = 0; d < P4EST_DIM; d++) {
+            double disp = coordinate[d] - first_coord[d];
+            dist += disp * disp;
+          }
+          dist = sqrt(dist);
+          if (h_min < 0. || dist < h_min) {
+            h_min = dist;
+          }
+        }
+      }
+    }
+  }
+  P4EST_ASSERT (h_min > 0.);
+  /* TODO: handle empty processes */
+  mpierr = MPI_Allreduce (&h_min, &h_min_global, 1, MPI_DOUBLE, MPI_MIN, p4est->mpicomm);
+  SC_CHECK_MPI(mpierr);
+  P4EST_ASSERT (h_min_global > 0.);
+
+  return h_min_global;
+}
+
 int
 main (int argc, char **argv)
 {
@@ -338,6 +418,9 @@ main (int argc, char **argv)
   int                 log_priority = SC_LP_ESSENTIAL;
   fusion_ctx_t        ctx;
   fusion_sphere_t     sphere;
+  double              velnorm = 0.;
+  double              mindist = -1.;
+  const char         *out_base_name = NULL;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -353,6 +436,11 @@ main (int argc, char **argv)
 #endif
   sphere.max_level = refine_level;
 
+  for (i = 0; i < P4EST_DIM; i++) {
+    velnorm += sphere.velocity[i] * sphere.velocity[i];
+  }
+  velnorm = sqrt(velnorm);
+
   /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
   mpicomm = sc_MPI_COMM_WORLD;
@@ -366,6 +454,8 @@ main (int argc, char **argv)
                       "The number of instances of timiing the fusion loop");
   sc_options_add_int (opt, 'q', "quiet", &log_priority, log_priority,
                       "Degree of quietude of output");
+  sc_options_add_string (opt, 'o', "output", &out_base_name, NULL,
+                         "Base name of visualization output");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -381,14 +471,20 @@ main (int argc, char **argv)
   /* set values in ctx here */
   /* random 1 for now */
   ctx.sphere = &sphere;
+  ctx.viz_name = out_base_name;
 
 #ifndef P4_TO_P8
-  conn = p4est_connectivity_new_moebius ();
+  //conn = p4est_connectivity_new_moebius ();
+  conn = p4est_connectivity_new_unitsquare ();
 #else
   conn = p8est_connectivity_new_rotcubes ();
 #endif
 
-  p4est = p4est_new (mpicomm, conn, 0, NULL, NULL);
+  p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */,
+                         1 /* min quadrant level */,
+                         1 /* fill uniform */,
+                         0 /* data size */,
+                         NULL, NULL);
   p4est->user_pointer = (void *) &ctx;
 
   p4est_refine (p4est, 1, refine_fn, NULL);
@@ -397,10 +493,13 @@ main (int argc, char **argv)
 
   p4est_partition (p4est, 0, NULL);
 
+  mindist = fusion_compute_h (p4est);
+
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
   sc_stats_init (&stats[FUSION_FULL_LOOP], "Full loop");
   sc_stats_init (&stats[FUSION_TIME_REFINE], "Local refinement");
+  sc_stats_init (&stats[FUSION_TIME_COARSEN], "Local coarsening");
   sc_stats_init (&stats[FUSION_TIME_BALANCE], "Balance");
   sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
   sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
@@ -433,8 +532,16 @@ main (int argc, char **argv)
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
-    sphere.time = 1.;
+    sphere.time = 0.5 * mindist / velnorm;
+    P4EST_GLOBAL_STATISTICSF("Simulation time: %g\n", sphere.time);
     mark_leaves (forest_copy, refine_flags, &ctx);
+
+    if (!i && ctx.viz_name) {
+      char buffer[BUFSIZ] = {'\0'};
+
+      snprintf (buffer, BUFSIZ, "%s_pre", ctx.viz_name);
+      p4est_vtk_write_file (forest_copy, NULL, buffer);
+    }
 
     /* Once the leaves have been marked, we have sufficient information to
      * complete a refinement cycle: start the timing at this point */
@@ -513,6 +620,13 @@ main (int argc, char **argv)
     sc_flops_shot (&fi_full, &snapshot_full);
     if (i) {
       sc_stats_accumulate (&stats[FUSION_FULL_LOOP], snapshot_full.iwtime);
+    }
+
+    if (!i && ctx.viz_name) {
+      char buffer[BUFSIZ] = {'\0'};
+
+      snprintf (buffer, BUFSIZ, "%s_post", ctx.viz_name);
+      p4est_vtk_write_file (forest_copy, NULL, buffer);
     }
 
     /* clean up */
