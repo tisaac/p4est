@@ -393,7 +393,7 @@ fusion_compute_h (p4est_t *p4est)
   }
   P4EST_ASSERT (h_min > 0.);
   /* TODO: handle empty processes */
-  mpierr = MPI_Allreduce (&h_min, &h_min_global, 1, MPI_DOUBLE, MPI_MIN, p4est->mpicomm);
+  mpierr = sc_MPI_Allreduce (&h_min, &h_min_global, 1, sc_MPI_DOUBLE, sc_MPI_MIN, p4est->mpicomm);
   SC_CHECK_MPI(mpierr);
   P4EST_ASSERT (h_min_global > 0.);
 
@@ -429,10 +429,10 @@ main (int argc, char **argv)
   for (i = 0; i < P4EST_DIM; i++) {
     sphere.x0[i] = 0.5;
   }
-  sphere.velocity[0] = 0.1;
-  sphere.velocity[1] = 0.02;
+  sphere.velocity[0] = 0.01;
+  sphere.velocity[1] = 0.002;
 #ifdef P4_TO_P8
-  sphere.velocity[2] = -0.05;
+  sphere.velocity[2] = -0.005;
 #endif
   sphere.max_level = refine_level;
 
@@ -532,8 +532,8 @@ main (int argc, char **argv)
 
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
-    sphere.time = 0.5 * mindist / velnorm;
-    P4EST_GLOBAL_STATISTICSF("Simulation time: %g\n", sphere.time);
+    ctx.sphere->time = 0.5 * mindist / velnorm;
+    P4EST_GLOBAL_STATISTICSF("Simulation time: %g\n", ctx.sphere->time);
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     if (!i && ctx.viz_name) {
@@ -574,6 +574,13 @@ main (int argc, char **argv)
                        1 /* callback on ophans */ , coarsen_in_loop, NULL,
                        NULL);
 
+    if (!i && ctx.viz_name) {
+      char buffer[BUFSIZ] = {'\0'};
+
+      snprintf (buffer, BUFSIZ, "%s_first_coarsen", ctx.viz_name);
+      p4est_vtk_write_file (forest_copy, NULL, buffer);
+    }
+
     sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
     if (i) {
       sc_stats_accumulate (&stats[FUSION_TIME_COARSEN],
@@ -589,6 +596,13 @@ main (int argc, char **argv)
     if (i) {
       sc_stats_accumulate (&stats[FUSION_TIME_REFINE],
                            snapshot_refine.iwtime);
+    }
+
+    if (!i && ctx.viz_name) {
+      char buffer[BUFSIZ] = {'\0'};
+
+      snprintf (buffer, BUFSIZ, "%s_second_refine", ctx.viz_name);
+      p4est_vtk_write_file (forest_copy, NULL, buffer);
     }
 
     P4EST_FREE (rflags_copy);
