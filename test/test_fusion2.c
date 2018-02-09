@@ -65,6 +65,7 @@ refine_loop_t;
 
 typedef struct
 {
+  p4est_quadrant_t    last_processed;
   int                 counter_in;
   int                 counter_out;
   int                *refine_flags;
@@ -190,7 +191,7 @@ coarsen_sphere_int_ext (p4est_t * p4est, p4est_topidx_t which_tree,
   if (quadrant->level <= 1) {   /* TODO: make this configurable? */
     return 0;
   }
-  return ~quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
+  return !quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
                                        sphere->time, sphere->radius,
                                        sphere->x0, sphere->velocity);
 }
@@ -248,17 +249,22 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
        * isn't possible, but we need to advance our counters */
       break;
     }
-    flag = loop_ctx->refine_flags[loop_ctx->counter_in + i];
-    if (flag != FUSION_COARSEN) {
-      /* One of the siblings does not want to coarsen, coarsening is not
-       * possible */
-      break;
+    if (!loop_ctx->counter_in
+        || (p4est_quadrant_compare (&(loop_ctx->last_processed), quads[i]) <
+            0)) {
+      flag = loop_ctx->refine_flags[loop_ctx->counter_in + i];
+      if (flag != FUSION_COARSEN) {
+        /* One of the siblings does not want to coarsen, coarsening is not
+         * possible */
+        break;
+      }
     }
   }
   if (i == P4EST_CHILDREN) {
     /* all agree to coarsen */
     /* advance the input counter by P4EST_CHILDREN */
     loop_ctx->counter_in += P4EST_CHILDREN;
+    loop_ctx->last_processed = *quads[P4EST_CHILDREN - 1];
     /* the new forest will have one parent in its place, that we do not want
      * to refine */
     loop_ctx->rflags_copy[loop_ctx->counter_out++] = FUSION_KEEP;
@@ -271,9 +277,14 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
       /* no more quadrants */
       break;
     }
-    flag = loop_ctx->refine_flags[loop_ctx->counter_in++];
-    loop_ctx->rflags_copy[loop_ctx->counter_out++] =
-      (flag == FUSION_REFINE) ? FUSION_REFINE : FUSION_KEEP;
+    if (!loop_ctx->counter_in
+        || (p4est_quadrant_compare (&(loop_ctx->last_processed), quads[i]) <
+            0)) {
+      flag = loop_ctx->refine_flags[loop_ctx->counter_in++];
+      loop_ctx->last_processed = *quads[i];
+      loop_ctx->rflags_copy[loop_ctx->counter_out++] =
+        (flag == FUSION_REFINE) ? FUSION_REFINE : FUSION_KEEP;
+    }
   }
 
   return 0;
@@ -300,7 +311,6 @@ mark_leaves (p4est_t * p4est, int *refine_flags, fusion_ctx_t * ctx)
       p4est_quadrant_t   *q =
         p4est_quadrant_array_index (quadrants, (size_t) j);
 
-      /* TODO: keep track of contexts better */
       refine_flags[i] = FUSION_KEEP;
       if (refine_sphere_boundary (p4est, t, q)) {
         refine_flags[i] = FUSION_REFINE;
@@ -324,11 +334,11 @@ enum
 };
 
 static double
-fusion_compute_h (p4est_t *p4est)
+fusion_compute_h (p4est_t * p4est)
 {
-  p4est_topidx_t flt, llt, t;
-  double         h_min = -1., h_min_global;
-  int            mpierr;
+  p4est_topidx_t      flt, llt, t;
+  double              h_min = -1., h_min_global;
+  int                 mpierr;
 
   flt = p4est->first_local_tree;
   llt = p4est->last_local_tree;
@@ -341,10 +351,10 @@ fusion_compute_h (p4est_t *p4est)
     p4est_locidx_t      j;
 
     for (j = 0; j < num_quadrants; j++) {
-      p4est_locidx_t     i;
+      p4est_locidx_t      i;
       p4est_quadrant_t   *q =
         p4est_quadrant_array_index (quadrants, (size_t) j);
-      double first_coord[3] = {0., 0., 0.};
+      double              first_coord[3] = { 0., 0., 0. };
       p4est_qcoord_t      h = P4EST_QUADRANT_LEN (q->level);
 
       for (i = 0; i < P4EST_CHILDREN; i++) {
@@ -376,14 +386,15 @@ fusion_compute_h (p4est_t *p4est)
           for (d = 0; d < P4EST_DIM; d++) {
             first_coord[d] = coordinate[d];
           }
-        } else {
-          double dist = 0.;
+        }
+        else {
+          double              dist = 0.;
 
           for (d = 0; d < P4EST_DIM; d++) {
-            double disp = coordinate[d] - first_coord[d];
+            double              disp = coordinate[d] - first_coord[d];
             dist += disp * disp;
           }
-          dist = sqrt(dist);
+          dist = sqrt (dist);
           if (h_min < 0. || dist < h_min) {
             h_min = dist;
           }
@@ -393,8 +404,10 @@ fusion_compute_h (p4est_t *p4est)
   }
   P4EST_ASSERT (h_min > 0.);
   /* TODO: handle empty processes */
-  mpierr = sc_MPI_Allreduce (&h_min, &h_min_global, 1, sc_MPI_DOUBLE, sc_MPI_MIN, p4est->mpicomm);
-  SC_CHECK_MPI(mpierr);
+  mpierr =
+    sc_MPI_Allreduce (&h_min, &h_min_global, 1, sc_MPI_DOUBLE, sc_MPI_MIN,
+                      p4est->mpicomm);
+  SC_CHECK_MPI (mpierr);
   P4EST_ASSERT (h_min_global > 0.);
 
   return h_min_global;
@@ -413,6 +426,7 @@ main (int argc, char **argv)
   int                 first_argc;
   int                 type;
   int                 num_tests = 3;
+  int                 max_level = refine_level;
   sc_statinfo_t       stats[FUSION_NUM_STATS];
   sc_options_t       *opt;
   int                 log_priority = SC_LP_ESSENTIAL;
@@ -434,12 +448,12 @@ main (int argc, char **argv)
 #ifdef P4_TO_P8
   sphere.velocity[2] = -0.005;
 #endif
-  sphere.max_level = refine_level;
+  sphere.max_level = max_level;
 
   for (i = 0; i < P4EST_DIM; i++) {
     velnorm += sphere.velocity[i] * sphere.velocity[i];
   }
-  velnorm = sqrt(velnorm);
+  velnorm = sqrt (velnorm);
 
   /* initialize MPI and libsc, p4est packages */
   mpiret = sc_MPI_Init (&argc, &argv);
@@ -456,6 +470,8 @@ main (int argc, char **argv)
                       "Degree of quietude of output");
   sc_options_add_string (opt, 'o', "output", &out_base_name, NULL,
                          "Base name of visualization output");
+  sc_options_add_int (opt, 'x', "max-level", &sphere.max_level,
+                      sphere.max_level, "Maximum refinement level");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -480,10 +496,10 @@ main (int argc, char **argv)
   conn = p8est_connectivity_new_rotcubes ();
 #endif
 
-  p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */,
-                         1 /* min quadrant level */,
-                         1 /* fill uniform */,
-                         0 /* data size */,
+  p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */ ,
+                         1 /* min quadrant level */ ,
+                         1 /* fill uniform */ ,
+                         0 /* data size */ ,
                          NULL, NULL);
   p4est->user_pointer = (void *) &ctx;
 
@@ -533,11 +549,12 @@ main (int argc, char **argv)
     refine_flags = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
     ctx.sphere->time = 0.5 * mindist / velnorm;
-    P4EST_GLOBAL_STATISTICSF("Simulation time: %g\n", ctx.sphere->time);
+    P4EST_GLOBAL_STATISTICSF ("Velocity: %g, Simulation time: %g\n", velnorm,
+                              ctx.sphere->time);
     mark_leaves (forest_copy, refine_flags, &ctx);
 
     if (!i && ctx.viz_name) {
-      char buffer[BUFSIZ] = {'\0'};
+      char                buffer[BUFSIZ] = { '\0' };
 
       snprintf (buffer, BUFSIZ, "%s_pre", ctx.viz_name);
       p4est_vtk_write_file (forest_copy, NULL, buffer);
@@ -570,12 +587,19 @@ main (int argc, char **argv)
     crs_loop_ctx.refine_flags = refine_flags;
     crs_loop_ctx.rflags_copy = rflags_copy;
     ctx.coarsen_loop = &crs_loop_ctx;
-    p4est_coarsen_ext (forest_copy, 0 /* non-recursive */ ,
-                       1 /* callback on ophans */ , coarsen_in_loop, NULL,
-                       NULL);
+    {
+      p4est_locidx_t      n_in = forest_copy->local_num_quadrants;
+
+      p4est_coarsen_ext (forest_copy, 0 /* non-recursive */ ,
+                         1 /* callback on ophans */ , coarsen_in_loop, NULL,
+                         NULL);
+      P4EST_ASSERT (crs_loop_ctx.counter_in == n_in);
+      P4EST_ASSERT (crs_loop_ctx.counter_out ==
+                    forest_copy->local_num_quadrants);
+    }
 
     if (!i && ctx.viz_name) {
-      char buffer[BUFSIZ] = {'\0'};
+      char                buffer[BUFSIZ] = { '\0' };
 
       snprintf (buffer, BUFSIZ, "%s_first_coarsen", ctx.viz_name);
       p4est_vtk_write_file (forest_copy, NULL, buffer);
@@ -599,7 +623,7 @@ main (int argc, char **argv)
     }
 
     if (!i && ctx.viz_name) {
-      char buffer[BUFSIZ] = {'\0'};
+      char                buffer[BUFSIZ] = { '\0' };
 
       snprintf (buffer, BUFSIZ, "%s_second_refine", ctx.viz_name);
       p4est_vtk_write_file (forest_copy, NULL, buffer);
@@ -637,7 +661,7 @@ main (int argc, char **argv)
     }
 
     if (!i && ctx.viz_name) {
-      char buffer[BUFSIZ] = {'\0'};
+      char                buffer[BUFSIZ] = { '\0' };
 
       snprintf (buffer, BUFSIZ, "%s_post", ctx.viz_name);
       p4est_vtk_write_file (forest_copy, NULL, buffer);
