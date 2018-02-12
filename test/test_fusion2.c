@@ -28,6 +28,8 @@
 #include <p4est_lnodes.h>
 #include <p4est_extended.h>
 #include <p4est_vtk.h>
+#include <p4est_fused.h>
+#include <p4est_algorithms.h>
 #else
 #include <p8est_bits.h>
 #include <p8est.h>
@@ -35,6 +37,8 @@
 #include <p8est_lnodes.h>
 #include <p8est_extended.h>
 #include <p8est_vtk.h>
+#include <p8est_fused.h>
+#include <p8est_algorithms.h>
 #endif
 #include <sc_flops.h>
 #include <sc_statistics.h>
@@ -665,6 +669,43 @@ main (int argc, char **argv)
 
       snprintf (buffer, BUFSIZ, "%s_post", ctx.viz_name);
       p4est_vtk_write_file (forest_copy, NULL, buffer);
+    }
+
+    /* Check instrumented version against the reference version */
+    {
+      p4est_locidx_t      li;
+      int8_t             *flags8;
+      p4est_t            *forest_copy_ref = NULL;
+      p4est_ghost_t      *ghost_copy_ref = NULL;
+
+      flags8 = P4EST_ALLOC (int8_t, p4est->local_num_quadrants);
+      /* (Copy flags to int8_t) */
+      for (li = 0; li < p4est->local_num_quadrants; li++) {
+        flags8[li] =
+          (refine_flags[li] ==
+           FUSION_KEEP) ? P4EST_FUSED_KEEP : (refine_flags[li] ==
+                                              FUSION_REFINE) ?
+          P4EST_FUSED_REFINE : P4EST_FUSED_COARSEN;
+      }
+
+      p4est_adapt_fused_reference (p4est, flags8, 0 /* no data */ ,
+                                   P4EST_CONNECT_FULL,
+                                   1 /* yes repartition */ ,
+                                   0 /* no repartition for coarsening */ ,
+                                   1 /* ghost layer width */ ,
+                                   P4EST_CONNECT_FULL,
+                                   NULL, NULL, NULL, &forest_copy_ref,
+                                   &ghost_copy_ref);
+
+      if (!p4est_is_equal (forest_copy, forest_copy_ref, 0)) {
+        SC_LERROR
+          ("Instrumented adaptivity cycle different from reference\n");
+        sc_abort ();
+      }
+
+      p4est_ghost_destroy (ghost_copy_ref);
+      p4est_destroy (forest_copy_ref);
+      P4EST_FREE (flags8);
     }
 
     /* clean up */
