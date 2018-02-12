@@ -170,7 +170,7 @@ p4est_adapt_fused_reference (p4est_t * p4est,
 
   fusion_ctx.coarsen_loop = &coarsen_ctx;
   /* coarsen families where every child's adapt_flag is P4EST_FUSED_COARSEN */
-  p4est_coarsen_ext (*p4est_out, 0, 0, coarsen_in_loop, init_fn, replace_fn);
+  p4est_coarsen_ext (*p4est_out, 0, 1, coarsen_in_loop, init_fn, replace_fn);
 
   refine_ctx.counter = 0;
   refine_ctx.refine_flags = aflag_copy;
