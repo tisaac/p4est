@@ -449,4 +449,8 @@
 /* functions in p4est_connrefine */
 #define p4est_connectivity_refine       p8est_connectivity_refine
 
+/* functions in p4est_fused */
+#define p4est_adapt_fused               p8est_adapt_fused
+#define p4est_adapt_fused_reference     p8est_adapt_fused_reference
+
 #endif /* !P4EST_TO_P8EST_H */
