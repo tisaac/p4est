@@ -34,10 +34,9 @@
 
 #include <p4est.h>
 #include <p4est_ghost.h>
+#include <p4est_extended.h>
 
 SC_EXTERN_C_BEGIN;
-
-SC_EXTERN_C_END;
 
 /** Coarsen, refine, balance, repartition, and reconstruct the ghost layer of
  * a forest.
@@ -103,5 +102,7 @@ void                p4est_adapt_fused_reference (p4est_t * p4est,
                                                  p4est_replace_t replace_fn,
                                                  p4est_t ** p4est_out,
                                                  p4est_ghost_t ** ghost_out);
+
+SC_EXTERN_C_END;
 
 #endif /* !P4EST_FUSED_H */

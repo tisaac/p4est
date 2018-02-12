@@ -34,10 +34,9 @@
 
 #include <p8est.h>
 #include <p8est_ghost.h>
+#include <p8est_extended.h>
 
 SC_EXTERN_C_BEGIN;
-
-SC_EXTERN_C_END;
 
 /** Coarsen, refine, balance, repartition, and reconstruct the ghost layer of
  * a forest.
@@ -103,5 +102,7 @@ void                p8est_adapt_fused_reference (p8est_t * p8est,
                                                  p8est_replace_t replace_fn,
                                                  p8est_t ** p8est_out,
                                                  p8est_ghost_t ** ghost_out);
+
+SC_EXTERN_C_END;
 
 #endif /* !P8EST_FUSED_H */
