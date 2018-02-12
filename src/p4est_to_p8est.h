@@ -71,6 +71,9 @@
 #define P4EST_WRAP_NONE                 P8EST_WRAP_NONE
 #define P4EST_WRAP_REFINE               P8EST_WRAP_REFINE
 #define P4EST_WRAP_COARSEN              P8EST_WRAP_COARSEN
+#define P4EST_FUSED_KEEP                P8EST_FUSED_KEEP
+#define P4EST_FUSED_REFINE              P8EST_FUSED_REFINE
+#define P4EST_FUSED_COARSEN             P8EST_FUSED_COARSEN
 
 /* redefine types */
 #ifdef P4EST_BACKWARD_DEALII
@@ -448,5 +451,9 @@
 
 /* functions in p4est_connrefine */
 #define p4est_connectivity_refine       p8est_connectivity_refine
+
+/* functions in p4est_fused */
+#define p4est_adapt_fused               p8est_adapt_fused
+#define p4est_adapt_fused_reference     p8est_adapt_fused_reference
 
 #endif /* !P4EST_TO_P8EST_H */
