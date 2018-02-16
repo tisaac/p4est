@@ -439,6 +439,7 @@ main (int argc, char **argv)
   double              velnorm = 0.;
   double              mindist = -1.;
   const char         *out_base_name = NULL;
+  int				  ghost_check;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -447,10 +448,10 @@ main (int argc, char **argv)
   for (i = 0; i < P4EST_DIM; i++) {
     sphere.x0[i] = 0.5;
   }
-  sphere.velocity[0] = 0.01;
-  sphere.velocity[1] = 0.002;
+  sphere.velocity[0] = 0.4;
+  sphere.velocity[1] = 0.2;
 #ifdef P4_TO_P8
-  sphere.velocity[2] = -0.005;
+  sphere.velocity[2] = -0.5;
 #endif
   sphere.max_level = max_level;
 
@@ -653,6 +654,9 @@ main (int argc, char **argv)
 
     sc_flops_shot (&fi_ghost, &snapshot_ghost);
     gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
+
+	ghost_check = p4est_ghost_is_equal(ghost, gl_copy);	
+
     sc_flops_shot (&fi_ghost, &snapshot_ghost);
     if (i) {
       sc_stats_accumulate (&stats[FUSION_TIME_GHOST], snapshot_ghost.iwtime);

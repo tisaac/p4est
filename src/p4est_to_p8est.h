@@ -385,6 +385,7 @@
 #define p4est_is_balanced               p8est_is_balanced
 #define p4est_ghost_checksum            p8est_ghost_checksum
 #define p4est_ghost_expand              p8est_ghost_expand
+#define p4est_ghost_is_equal			p8est_ghost_is_equal
 
 /* functions in p4est_nodes */
 #define p4est_nodes_new                 p8est_nodes_new
