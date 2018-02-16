@@ -431,11 +431,13 @@ main (int argc, char **argv)
   sc_MPI_Comm         mpicomm;
   p4est_t            *p4est;
   p4est_connectivity_t *conn;
-  p4est_ghost_t      *ghost;
+  p4est_ghost_t      *ghost = NULL;
   int                 i;
+#if 0
+  /* TODO: fusion for finite element nodes as well */
   p4est_lnodes_t     *lnodes;   /* runtime option: time lnodes construction */
+#endif
   int                 first_argc;
-  int                 type;
   int                 num_tests = 3;
   int                 max_level = refine_level;
   sc_statinfo_t       stats[FUSION_NUM_STATS];
@@ -707,7 +709,7 @@ main (int argc, char **argv)
 
       SC_CHECK_ABORT (p4est_is_equal (forest_copy, forest_copy_ref, 0),
                       "Instrumented adaptivity cycle forest different from reference\n");
-      SC_CHECK_ABORT (p4est_ghost_is_equal (ghost, gl_copy),
+      SC_CHECK_ABORT (p4est_ghost_is_equal (gl_copy, ghost_copy_ref),
                       "Instrumented adaptivity cycle ghost layer different from reference\n");
 
       p4est_ghost_destroy (ghost_copy_ref);
