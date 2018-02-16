@@ -439,7 +439,6 @@ main (int argc, char **argv)
   double              velnorm = 0.;
   double              mindist = -1.;
   const char         *out_base_name = NULL;
-  int				  ghost_check;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -655,8 +654,6 @@ main (int argc, char **argv)
     sc_flops_shot (&fi_ghost, &snapshot_ghost);
     gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
 
-	ghost_check = p4est_ghost_is_equal(ghost, gl_copy);	
-
     sc_flops_shot (&fi_ghost, &snapshot_ghost);
     if (i) {
       sc_stats_accumulate (&stats[FUSION_TIME_GHOST], snapshot_ghost.iwtime);
@@ -701,11 +698,10 @@ main (int argc, char **argv)
                                    NULL, NULL, NULL, &forest_copy_ref,
                                    &ghost_copy_ref);
 
-      if (!p4est_is_equal (forest_copy, forest_copy_ref, 0)) {
-        SC_LERROR
-          ("Instrumented adaptivity cycle different from reference\n");
-        sc_abort ();
-      }
+      SC_CHECK_ABORT (p4est_is_equal (forest_copy, forest_copy_ref, 0),
+                      "Instrumented adaptivity cycle forest different from reference\n");
+      SC_CHECK_ABORT (p4est_ghost_is_equal (ghost, gl_copy),
+                      "Instrumented adaptivity cycle ghost layer different from reference\n");
 
       p4est_ghost_destroy (ghost_copy_ref);
       p4est_destroy (forest_copy_ref);
