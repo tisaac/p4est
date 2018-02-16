@@ -381,6 +381,15 @@ void                p8est_ghost_exchange_custom_levels_end
 void                p8est_ghost_expand (p8est_t * p8est,
                                         p8est_ghost_t * ghost);
 
+/** Check whether the copy of ghost layer is equal to the original ghost layer. 
+ *  Returns 1 if true, 0 else.
+ *  \param [in]		ghost Original ghost layer
+ *	\param [in]		copy  Ghost layer created on copied forest
+ *	\return			true if two ghost layers are equal
+ */
+int                 p8est_ghost_is_equal (p8est_ghost_t * ghost,
+                                          p8est_ghost_t * copy);
+
 SC_EXTERN_C_END;
 
 #endif /* !P8EST_GHOST_H */

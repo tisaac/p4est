@@ -83,6 +83,7 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
   int                 i;
   fusion_ctx_t       *ctx = p4est_get_fusion_ctx (p4est);
   coarsen_loop_t     *loop_ctx = ctx->coarsen_loop;
+  p4est_quadrant_t    testq;
   int                 flag;
 
   for (i = 0; i < P4EST_CHILDREN; i++) {
@@ -92,9 +93,11 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
        * isn't possible, but we need to advance our counters */
       break;
     }
+    testq = *quads[i];
+    testq.p.which_tree = which_tree;
     if (!loop_ctx->counter_in
-        || (p4est_quadrant_compare (&(loop_ctx->last_processed), quads[i]) <
-            0)) {
+        || (p4est_quadrant_compare_piggy (&(loop_ctx->last_processed), &testq)
+            < 0)) {
       flag = loop_ctx->refine_flags[loop_ctx->counter_in + i];
       if (flag != P4EST_FUSED_COARSEN) {
         /* One of the siblings does not want to coarsen, coarsening is not
@@ -107,7 +110,9 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
     /* all agree to coarsen */
     /* advance the input counter by P4EST_CHILDREN */
     loop_ctx->counter_in += P4EST_CHILDREN;
-    loop_ctx->last_processed = *quads[P4EST_CHILDREN - 1];
+    testq = *quads[P4EST_CHILDREN - 1];
+    testq.p.which_tree = which_tree;
+    loop_ctx->last_processed = testq;
     /* the new forest will have one parent in its place, that we do not want
      * to refine */
     loop_ctx->rflags_copy[loop_ctx->counter_out++] = P4EST_FUSED_KEEP;
@@ -120,9 +125,11 @@ coarsen_in_loop (p4est_t * p4est, p4est_topidx_t which_tree,
       /* no more quadrants */
       break;
     }
+    testq = *quads[i];
+    testq.p.which_tree = which_tree;
     if (!loop_ctx->counter_in
-        || (p4est_quadrant_compare (&(loop_ctx->last_processed), quads[i]) <
-            0)) {
+        || (p4est_quadrant_compare_piggy (&(loop_ctx->last_processed), &testq)
+            < 0)) {
       flag = loop_ctx->refine_flags[loop_ctx->counter_in++];
       loop_ctx->last_processed = *quads[i];
       loop_ctx->rflags_copy[loop_ctx->counter_out++] =

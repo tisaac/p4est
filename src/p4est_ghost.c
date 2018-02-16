@@ -4073,41 +4073,41 @@ p4est_ghost_is_valid (p4est_t * p4est, p4est_ghost_t * ghost)
 int
 p4est_ghost_is_equal (p4est_ghost_t * ghost, p4est_ghost_t * copy)
 {
-	int i,j;
+  int                 i, j;
 
-	if (ghost->num_trees != copy->num_trees){
-		return 0;
-	}
-	if (!sc_array_is_equal(&ghost->ghosts,&copy->ghosts)){
-		return 0;
-	}	
-	if (ghost->btype != copy->btype){
-		return 0;
-	}	
-	if (ghost->num_trees != copy->mpisize){
-		return 0;
-	}
+  if (ghost->num_trees != copy->num_trees) {
+    return 0;
+  }
+  if (!sc_array_is_equal (&ghost->ghosts, &copy->ghosts)) {
+    return 0;
+  }
+  if (ghost->btype != copy->btype) {
+    return 0;
+  }
+  if (ghost->mpisize != copy->mpisize) {
+    return 0;
+  }
 
-	for (i=0 ; i < ghost->num_trees +1; i++){
-		if (((p4est_locidx_t) ghost->tree_offsets[i] !=
-			(p4est_locidx_t) copy->tree_offsets[i]) ||
-			((p4est_locidx_t) ghost->mirror_tree_offsets[i] !=
-       		(p4est_locidx_t) copy->mirror_tree_offsets[i])){
-				return 0;
-		}
-	}
-	for (j=0 ; j < ghost->mpisize +1; j++){
-		if (((p4est_locidx_t) ghost->proc_offsets[j] !=
-			(p4est_locidx_t) copy->proc_offsets[j]) ||
-			((p4est_locidx_t) ghost->mirror_proc_offsets[j] !=
-       		(p4est_locidx_t) copy->mirror_proc_offsets[j])){
-				return 0;
-		}
-	}
+  for (i = 0; i < ghost->num_trees + 1; i++) {
+    if (((p4est_locidx_t) ghost->tree_offsets[i] !=
+         (p4est_locidx_t) copy->tree_offsets[i]) ||
+        ((p4est_locidx_t) ghost->mirror_tree_offsets[i] !=
+         (p4est_locidx_t) copy->mirror_tree_offsets[i])) {
+      return 0;
+    }
+  }
+  for (j = 0; j < ghost->mpisize + 1; j++) {
+    if (((p4est_locidx_t) ghost->proc_offsets[j] !=
+         (p4est_locidx_t) copy->proc_offsets[j]) ||
+        ((p4est_locidx_t) ghost->mirror_proc_offsets[j] !=
+         (p4est_locidx_t) copy->mirror_proc_offsets[j])) {
+      return 0;
+    }
+  }
 
-	if (!sc_array_is_equal(&ghost->mirrors, &copy->mirrors)){
-		return 0;
-	}	
+  if (!sc_array_is_equal (&ghost->mirrors, &copy->mirrors)) {
+    return 0;
+  }
 
-	return 1;
+  return 1;
 }

@@ -388,9 +388,8 @@ void                p4est_ghost_expand (p4est_t * p4est,
  *	\param [in]		copy  Ghost layer created on copied forest
  *	\return			true if two ghost layers are equal
  */
-
-int					p4est_ghost_is_equal (p4est_ghost_t * ghost,
-										  p4est_ghost_t * copy);
+int                 p4est_ghost_is_equal (p4est_ghost_t * ghost,
+                                          p4est_ghost_t * copy);
 
 SC_EXTERN_C_END;
 
