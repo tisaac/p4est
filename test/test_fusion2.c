@@ -341,6 +341,7 @@ enum
   FUSION_TIME_BALANCE,
   FUSION_TIME_PARTITION,
   FUSION_TIME_GHOST,
+  FUSION_TIME_OPTIMIZED,
   FUSION_NUM_STATS
 };
 
@@ -532,6 +533,7 @@ main (int argc, char **argv)
   sc_stats_init (&stats[FUSION_TIME_BALANCE], "Balance");
   sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
   sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
+  sc_stats_init (&stats[FUSION_TIME_OPTIMIZED], "Optimized");
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
@@ -545,6 +547,7 @@ main (int argc, char **argv)
     sc_flopinfo_t       fi_partition, snapshot_partition;
     sc_flopinfo_t       fi_ghost, snapshot_ghost;
     sc_flopinfo_t       fi_coarsen, snapshot_coarsen;
+    sc_flopinfo_t       fi_opt, snapshot_opt;
 
     if (!i) {
       P4EST_GLOBAL_PRODUCTION ("Timing loop 0 (discarded)\n");
@@ -687,6 +690,8 @@ main (int argc, char **argv)
       int8_t             *flags8;
       p4est_t            *forest_copy_ref = NULL;
       p4est_ghost_t      *ghost_copy_ref = NULL;
+      p4est_t            *forest_copy_opt = NULL;
+      p4est_ghost_t      *ghost_copy_opt = NULL;
 
       flags8 = P4EST_ALLOC (int8_t, p4est->local_num_quadrants);
       /* (Copy flags to int8_t) */
@@ -712,6 +717,26 @@ main (int argc, char **argv)
       SC_CHECK_ABORT (p4est_ghost_is_equal (gl_copy, ghost_copy_ref),
                       "Instrumented adaptivity cycle ghost layer different from reference\n");
 
+      sc_flops_snap (&fi_opt, &snapshot_opt);
+      p4est_adapt_fused (p4est, flags8, 0 /* no data */ ,
+                         P4EST_CONNECT_FULL, 1 /* yes repartition */ ,
+                         0 /* no repartition for coarsening */ ,
+                         1 /* ghost layer width */ ,
+                         P4EST_CONNECT_FULL,
+                         NULL, NULL, NULL, &forest_copy_opt, &ghost_copy_opt);
+      sc_flops_shot (&fi_opt, &snapshot_opt);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_TIME_OPTIMIZED],
+                             snapshot_opt.iwtime);
+      }
+
+      SC_CHECK_ABORT (p4est_is_equal (forest_copy_ref, forest_copy_opt, 0),
+                      "Optimized adaptivity cycle forest different from reference\n");
+      SC_CHECK_ABORT (p4est_ghost_is_equal (ghost_copy_ref, ghost_copy_opt),
+                      "Optimized adaptivity cycle ghost layer different from reference\n");
+
+      p4est_ghost_destroy (ghost_copy_opt);
+      p4est_destroy (forest_copy_opt);
       p4est_ghost_destroy (ghost_copy_ref);
       p4est_destroy (forest_copy_ref);
       P4EST_FREE (flags8);

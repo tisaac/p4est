@@ -203,3 +203,67 @@ p4est_adapt_fused_reference (p4est_t * p4est,
 
   (*p4est_out)->user_pointer = orig_ctx;
 }
+
+void
+p4est_adapt_fused (p4est_t * p4est,
+                   const int8_t * adapt_flag,
+                   int copy_data,
+                   p4est_connect_type_t
+                   balance_type,
+                   int repartition,
+                   int partition_for_coarsening,
+                   int ghost_layer_width,
+                   p4est_connect_type_t
+                   ghost_type,
+                   p4est_weight_t weight_fn,
+                   p4est_init_t init_fn,
+                   p4est_replace_t replace_fn,
+                   p4est_t ** p4est_out, p4est_ghost_t ** ghost_out)
+{
+  refine_loop_t       refine_ctx;
+  coarsen_loop_t      coarsen_ctx;
+  fusion_ctx_t        fusion_ctx;
+  void               *orig_ctx;
+  int8_t             *aflag_copy;
+
+  if (*p4est_out != p4est) {
+    *p4est_out = p4est_copy (p4est, copy_data);
+  }
+  orig_ctx = (*p4est_out)->user_pointer;
+  (*p4est_out)->user_pointer = (void *) &fusion_ctx;
+
+  aflag_copy = P4EST_ALLOC (int8_t, (size_t) p4est->local_num_quadrants);
+
+  coarsen_ctx.counter_in = 0;
+  coarsen_ctx.counter_out = 0;
+  coarsen_ctx.refine_flags = adapt_flag;
+  coarsen_ctx.rflags_copy = aflag_copy;
+
+  fusion_ctx.coarsen_loop = &coarsen_ctx;
+  /* coarsen families where every child's adapt_flag is P4EST_FUSED_COARSEN */
+  p4est_coarsen_ext (*p4est_out, 0, 1, coarsen_in_loop, init_fn, replace_fn);
+
+  refine_ctx.counter = 0;
+  refine_ctx.refine_flags = aflag_copy;
+
+  fusion_ctx.refine_loop = &refine_ctx;
+  /* refine all quadrants marked P4EST_FUSED_REFINE */
+  p4est_refine_ext (*p4est_out, 0, P4EST_QMAXLEVEL, refine_in_loop, init_fn,
+                    *replace_fn);
+
+  P4EST_FREE (aflag_copy);
+  p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
+  if (repartition) {
+    p4est_partition (*p4est_out, partition_for_coarsening, weight_fn);
+  }
+  if (ghost_layer_width > 0) {
+    int                 i;
+
+    *ghost_out = p4est_ghost_new (*p4est_out, ghost_type);
+    for (i = 1; i < ghost_layer_width; i++) {
+      p4est_ghost_expand (*p4est_out, *ghost_out);
+    }
+  }
+
+  (*p4est_out)->user_pointer = orig_ctx;
+}
