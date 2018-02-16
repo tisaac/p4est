@@ -204,6 +204,28 @@ p4est_adapt_fused_reference (p4est_t * p4est,
   (*p4est_out)->user_pointer = orig_ctx;
 }
 
+static void
+p4est_adapt_fused_partition_ghost (p4est_t * p4est, int repartition,
+                                   int partition_for_coarsening,
+                                   int ghost_layer_width,
+                                   p4est_connect_type_t
+                                   ghost_type,
+                                   p4est_weight_t weight_fn,
+                                   p4est_ghost_t ** ghost_out)
+{
+  if (repartition) {
+    p4est_partition (p4est, partition_for_coarsening, weight_fn);
+  }
+  if (ghost_layer_width > 0) {
+    int                 i;
+
+    *ghost_out = p4est_ghost_new (p4est, ghost_type);
+    for (i = 1; i < ghost_layer_width; i++) {
+      p4est_ghost_expand (p4est, *ghost_out);
+    }
+  }
+}
+
 void
 p4est_adapt_fused (p4est_t * p4est,
                    const int8_t * adapt_flag,
@@ -253,17 +275,10 @@ p4est_adapt_fused (p4est_t * p4est,
 
   P4EST_FREE (aflag_copy);
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
-  if (repartition) {
-    p4est_partition (*p4est_out, partition_for_coarsening, weight_fn);
-  }
-  if (ghost_layer_width > 0) {
-    int                 i;
-
-    *ghost_out = p4est_ghost_new (*p4est_out, ghost_type);
-    for (i = 1; i < ghost_layer_width; i++) {
-      p4est_ghost_expand (*p4est_out, *ghost_out);
-    }
-  }
+  p4est_adapt_fused_partition_ghost (*p4est_out, repartition,
+                                     partition_for_coarsening,
+                                     ghost_layer_width, ghost_type, weight_fn,
+                                     ghost_out);
 
   (*p4est_out)->user_pointer = orig_ctx;
 }
