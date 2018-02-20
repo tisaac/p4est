@@ -205,6 +205,24 @@ p4est_adapt_fused_reference (p4est_t * p4est,
 }
 
 static void
+p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_proc,
+                            int *p_first, /* the id of the first mpi rank that overlaps my current domain */
+                            int *p_last,  /* the id of the last mpi rank that overlaps my current domain */
+                            p4est_quadrant_t **post_first_locations)
+                            /* size: | p_last + 1 - p_first |: for each p in
+                             * [p_last, ..., p_first], a quadrant of size
+                             * QMAXLEVEL (smallest possible, see
+                             * p4est_quadrant_first_descendant()) that is the first
+                             * location for that process in my domain in the
+                             * post repartitioning distribution (mimicking the global_first_position array) */
+{
+}
+
+/* TODO: put this in an internal header file */
+p4est_locidx_t * p4est_partition_compute(p4est_t *p4est, int partition_for_coarsening,
+                                         p4est_gloidx_t global_num_quadrants, p4est_weight_t weight_fn);
+
+static void
 p4est_adapt_fused_partition_ghost (p4est_t * p4est, int repartition,
                                    int partition_for_coarsening,
                                    int ghost_layer_width,
@@ -213,9 +231,27 @@ p4est_adapt_fused_partition_ghost (p4est_t * p4est, int repartition,
                                    p4est_weight_t weight_fn,
                                    p4est_ghost_t ** ghost_out)
 {
+#if 0
   if (repartition) {
     p4est_partition (p4est, partition_for_coarsening, weight_fn);
   }
+#else
+  p4est_locidx_t *post_num_quads_in_proc;
+  int             p_first, p_last;
+  p4est_quadrant_t *post_first_locations;
+
+  post_num_quads_in_proc = p4est_partition_compute (p4est, partition_for_coarsening,
+                                               -1, weight_fn);
+
+  /* From the number of quadrants in each proc in the new partition, compute
+   * the first quadrant */
+
+  p4est_fused_overlap_compute (p4est, post_num_quads_in_proc, &p_first, &p_last,
+                               &post_first_locations);
+
+
+  P4EST_FREE (post_num_quads_in_proc);
+#endif
   if (ghost_layer_width > 0) {
     int                 i;
 
