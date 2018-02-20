@@ -311,6 +311,7 @@
 #define p4est_partition_correction      p8est_partition_correction
 #define p4est_partition_for_coarsening  p8est_partition_for_coarsening
 #define p4est_partition_given           p8est_partition_given
+#define p4est_partition_compute         p8est_partition_compute
 
 /* functions in p4est_communication */
 #define p4est_comm_parallel_env_assign  p8est_comm_parallel_env_assign

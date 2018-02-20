@@ -2427,12 +2427,15 @@ p4est_partition (p4est_t * p4est, int allow_for_coarsening,
   (void) p4est_partition_ext (p4est, allow_for_coarsening, weight_fn);
 }
 
-p4est_gloidx_t
-p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
-                     p4est_weight_t weight_fn)
+/* p4est may not be valid yet: we expect
+   each process to know its own local number of quadrants, but the global
+   total may not be known yet */
+p4est_locidx_t     *
+p4est_partition_compute (p4est_t * p4est, int partition_for_coarsening,
+                         p4est_gloidx_t global_num_quadrants,
+                         p4est_weight_t weight_fn)
 {
   p4est_gloidx_t      global_shipped = 0;
-  const p4est_gloidx_t global_num_quadrants = p4est->global_num_quadrants;
 #ifdef P4EST_ENABLE_MPI
   int                 mpiret;
   int                 low_source, high_source;
@@ -2463,29 +2466,22 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
   p4est_gloidx_t      num_corrected;
 #endif /* P4EST_ENABLE_MPI */
 
-  P4EST_ASSERT (p4est_is_valid (p4est));
-  P4EST_GLOBAL_PRODUCTIONF
-    ("Into " P4EST_STRING
-     "_partition with %lld total quadrants\n",
-     (long long) p4est->global_num_quadrants);
-
-  /* this function does nothing in a serial setup */
-  if (p4est->mpisize == 1) {
-    P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING "_partition no shipping\n");
-
-    /* in particular, there is no need to bumb the revision counter */
-    P4EST_ASSERT (global_shipped == 0);
-    return global_shipped;
-  }
-
-  p4est_log_indent_push ();
-
-#ifdef P4EST_ENABLE_MPI
   /* allocate new quadrant distribution counts */
   num_quadrants_in_proc = P4EST_ALLOC (p4est_locidx_t, num_procs);
 
   if (weight_fn == NULL) {
     /* Divide up the quadrants equally */
+    if (global_num_quadrants < 0) {
+      /* global count is not known */
+      p4est_gloidx_t      glocal_num_quadrants =
+        (p4est_gloidx_t) local_num_quadrants;
+
+      mpiret =
+        sc_MPI_Allreduce (&glocal_num_quadrants, &global_num_quadrants, 1,
+                          P4EST_MPI_GLOIDX, MPI_SUM, p4est->mpicomm);
+      SC_CHECK_MPI (mpiret);
+      P4EST_ASSERT (global_num_quadrants >= 0);
+    }
     for (p = 0, next_quadrant = 0; p < num_procs; ++p) {
       prev_quadrant = next_quadrant;
       next_quadrant =
@@ -2553,13 +2549,10 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
       P4EST_FREE (local_weights);
       P4EST_FREE (global_weight_sums);
       P4EST_FREE (num_quadrants_in_proc);
-      p4est_log_indent_pop ();
-      P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING
-                               "_partition no shipping\n");
 
       /* in particular, there is no need to bumb the revision counter */
       P4EST_ASSERT (global_shipped == 0);
-      return global_shipped;
+      return NULL;              /* NULL inidicates no shipping to be done */
     }
 
     /* determine processor ids to send to */
@@ -2757,6 +2750,47 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
     P4EST_GLOBAL_INFOF
       ("Designated partition for coarsening %lld quadrants moved\n",
        (long long) num_corrected);
+  }
+
+  return num_quadrants_in_proc;
+}
+
+p4est_gloidx_t
+p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
+                     p4est_weight_t weight_fn)
+{
+  p4est_gloidx_t      global_shipped = 0;
+  const p4est_gloidx_t global_num_quadrants = p4est->global_num_quadrants;
+#ifdef P4EST_ENABLE_MPI
+  p4est_locidx_t     *num_quadrants_in_proc;
+#endif /* P4EST_ENABLE_MPI */
+
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  P4EST_GLOBAL_PRODUCTIONF
+    ("Into " P4EST_STRING
+     "_partition with %lld total quadrants\n",
+     (long long) p4est->global_num_quadrants);
+
+  /* this function does nothing in a serial setup */
+  if (p4est->mpisize == 1) {
+    P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING "_partition no shipping\n");
+
+    /* in particular, there is no need to bumb the revision counter */
+    P4EST_ASSERT (global_shipped == 0);
+    return global_shipped;
+  }
+
+  p4est_log_indent_push ();
+
+#ifdef P4EST_ENABLE_MPI
+  /* allocate new quadrant distribution counts */
+  num_quadrants_in_proc =
+    p4est_partition_compute (p4est, partition_for_coarsening,
+                             p4est->global_num_quadrants, weight_fn);
+
+  if (!num_quadrants_in_proc) {
+    P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING "_partition no shipping\n");
+    return 0;
   }
 
   /* run the partition algorithm with proper quadrant counts */
