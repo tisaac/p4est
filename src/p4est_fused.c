@@ -216,6 +216,38 @@ p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_p
                              * location for that process in my domain in the
                              * post repartitioning distribution (mimicking the global_first_position array) */
 {
+	int i,j;
+	int size = *p_last + 1 - *p_first;
+	int QMAXLEVEL;
+	p4est_topidx_t which_tree;
+	p4est_tree_t tree;
+	const p4est_topidx_t first_local_tree = p4est->first_local_tree;
+	const p4est_topidx_t last_local_tree = p4est->last_local_tree;
+	p4est_gloidx_t *local_tree_last_quad_index;
+
+	sc_array_t		*trees = p4est->trees;
+
+	local_tree_last_quad_index = P4EST_ALLOC (p4est_gloidx_t, trees->elem_count);
+
+
+
+	tree = p4est_tree_array_index(trees,which_tree);
+	
+	for (which_tree = first_local_tree + 1;
+		 which_tree <= last_local_tree; ++which_tree){
+	    tree = p4est_tree_array_index (trees, which_tree);
+    	local_tree_last_quad_index[which_tree] = tree->quadrants.elem_count
+	      + local_tree_last_quad_index[which_tree - 1];
+	}
+
+	for (i = 0; i < *post_num_quads_in_proc; i++){
+		for ( j = 0 ; j < size; j++){
+			if (quadran[i] is in proc_j){
+				first = first_descendant(QMAXLEVEL);
+			}
+		p4est_quadrant_first_descendant(*p4est_quadrant_t input, *p4est_quadrant_t output, QMAXLEVEL);
+		}
+	}
 }
 
 /* TODO: put this in an internal header file */
