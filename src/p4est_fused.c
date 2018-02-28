@@ -205,7 +205,7 @@ p4est_adapt_fused_reference (p4est_t * p4est,
 }
 
 static int
-p4est_gloidx_interval_compar (const void *key, const, void *base)
+p4est_gloidx_interval_compar (const void *key, const void *base)
 {
   p4est_gloidx_t my_first = *((const p4est_gloidx_t *) key);
   const p4est_gloidx_t *array = (const p4est_gloidx_t *) base;
@@ -240,11 +240,12 @@ p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_p
   const p4est_topidx_t first_local_tree = p4est->first_local_tree;
   const p4est_topidx_t last_local_tree = p4est->last_local_tree;
   p4est_gloidx_t *post_offsets;
+  p4est_gloidx_t *pre_offsets;
   p4est_gloidx_t *local_tree_last_quad_index;
-  int first, last, nrecvs;
+  int first, last, nrecvs, nsends, pre_first, pre_last;
   p4est_quadrant_t *recv_buf;
   MPI_Request *recv_req;
-  sc_array_t *trees = p4est->trees;
+  MPI_Request *send_req;
 
   /* convert counts into offsets via prefix sum */
   post_offsets = P4EST_ALLOC (p4est_gloidx_t, mpisize + 1);
@@ -259,6 +260,15 @@ p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_p
     }
     post_offsets[mpisize] = offset;
   }
+
+  pre_offsets = P4EST_ALLOC (p4est_gloidx_t, mpisize);
+
+  {
+	for (i = 0; i < mpisize; i++) {
+	  pre_offsets[i] = p4est->global_first_quadrant[i + 1] - 1;
+	}
+  }
+
 
   /* Question to answer: what is p_first, the first process rank whose post-partition
    * domain, will overlap my current domain ? */
@@ -278,7 +288,7 @@ p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_p
     P4EST_ASSERT (*p_first >= 0 && *p_first < mpisize);
   }
 
-  /* Question to answer: what is p_first, the first process rank whose post-partition
+  /* Question to answer: what is p_last, the last process rank whose post-partition
    * domain, will overlap my current domain ? */
   /* TODO: make sure we don't update the offset before this point */
   {
@@ -296,10 +306,52 @@ p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_p
     P4EST_ASSERT (*p_last >= 0 && *p_last < mpisize);
   }
 
+  /* Question to answer: what is pre_first, the first process rank whose pre-partition
+   * domain, will overlap my post partition domain ? */
+  /* TODO: make sure we don't update the offset before this point */
+  {
+    p4est_gloidx_t post_start;
+    p4est_gloidx_t *array_loc;
+
+	post_start =  post_offsets[mpirank];
+
+	array_loc = (p4est_gloidx_t *) bsearch ((void *) &post_start;
+											(void *) pre_offsets;
+											(size_t) mpisize,
+											sizeof(p4est_gloidx_t),
+											p4est_gloidx_interval_compar);
+
+    P4EST_ASSERT (array_loc != NULL);
+    pre_first = array_loc; //?? what is post_offset ? (w/o s)
+    P4EST_ASSERT (pre_first >= 0 && pre_first < mpisize);
+  }
+
+  /* Question to answer: what is pre_last, the last process rank whose pre-partition
+   * domain, will overlap my post partition domain ? */
+  /* TODO: make sure we don't update the offset before this point */
+  {
+    p4est_gloidx_t post_last;
+    p4est_gloidx_t *array_loc;
+
+	post_last =  post_offsets[mpirank +1] - 1 ; 
+
+	array_loc = (p4est_gloidx_t *) bsearch ((void *) &post_last;
+											(void *) pre_offsets;
+											(size_t) mpisize,
+											sizeof(p4est_gloidx_t),
+											p4est_gloidx_interval_compar);
+
+    P4EST_ASSERT (array_loc != NULL);
+    pre_last = array_loc;
+    P4EST_ASSERT (pre_last >= 0 && pre_last < mpisize);
+  }
+
+
+
   nrecvs = last + 1 - first;
 
   recv_buf = P4EST_ALLOC(p4est_quadrant_t, nrecvs);
-  recv_req = P4EST_ALLOC(MPI_Request, nrecvs);
+  recv_req = P4EST_ALLOC(MPI_Request, nrecvs);//
 
   for (i = first, j = 0; i < last; i++) {
     if (post_num_quads_in_proc[i]) {
@@ -311,28 +363,25 @@ p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_p
     }
   }
 
+  nsends = pre_last + 1 - pre_first;
 
-  local_tree_last_quad_index = P4EST_ALLOC (p4est_gloidx_t, trees->elem_count);
+  send_req = P4EST_ALLOC(MPI_Request, nsends);
 
-
-
-  tree = p4est_tree_array_index(trees,which_tree);
-
-  for (which_tree = first_local_tree + 1;
-       which_tree <= last_local_tree; ++which_tree){
-    tree = p4est_tree_array_index (trees, which_tree);
-    local_tree_last_quad_index[which_tree] = tree->quadrants.elem_count
-                                             + local_tree_last_quad_index[which_tree - 1];
+  for (i = pre_start, j = 0; i < pre_last; i++) {
+    // if clause here?
+    mpiret = sc_MPI_Isend(p4est->global_first_position , sizeof(p4est_quadrant_t), MPI_BYTE,
+                          i, P4EST_COMM_FUSED_PART_1, p4est->mpicomm
+                          &send_req[j]);
+    SC_CHECK_MPI(mpiret);
+    j++;
   }
 
-  for (i = 0; i < *post_num_quads_in_proc; i++){
-    for ( j = 0 ; j < size; j++){
-      if (quadran[i] is in proc_j){
-        first = first_descendant(QMAXLEVEL);
-      }
-      p4est_quadrant_first_descendant(*p4est_quadrant_t input, *p4est_quadrant_t output, QMAXLEVEL);
-    }
-  }
+  mpiret = sc_MPI_Waitall (nrecvs, recv_req, MPI_STATUSES_IGNORE); SC_CHECK_MPI(mpiret);
+  mpiret = sc_MPI_Waitall (nsends, send_req, MPI_STATUSES_IGNORE); SC_CHECK_MPI(mpiret);
+
+
+  *post_first_locations = recv_buf;
+
 }
 
 /* TODO: put this in an internal header file */
