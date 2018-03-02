@@ -207,189 +207,198 @@ p4est_adapt_fused_reference (p4est_t * p4est,
 static int
 p4est_gloidx_interval_compar (const void *key, const void *base)
 {
-  p4est_gloidx_t my_first = *((const p4est_gloidx_t *) key);
+  p4est_gloidx_t      my_first = *((const p4est_gloidx_t *) key);
   const p4est_gloidx_t *array = (const p4est_gloidx_t *) base;
-  p4est_gloidx_t this_offset = array[0];
-  p4est_gloidx_t next_offset = array[1];
+  p4est_gloidx_t      this_offset = array[0];
+  p4est_gloidx_t      next_offset = array[1];
 
-  if (my_first < this_offset) return -1;
-  if (my_first >= next_offset) return 1;
+  if (my_first < this_offset)
+    return -1;
+  if (my_first >= next_offset)
+    return 1;
   return 0;
 }
 
-static void
-p4est_fused_overlap_compute (p4est_t *p4est, p4est_locidx_t *post_num_quads_in_proc,
-                            int *p_first, /* the id of the first mpi rank that overlaps my current domain */
-                            int *p_last,  /* the id of the last mpi rank that overlaps my current domain */
-                            p4est_quadrant_t **post_first_locations)
-                            /* size: | p_last + 1 - p_first |: for each p in
-                             * [p_last, ..., p_first], a quadrant of size
-                             * QMAXLEVEL (smallest possible, see
-                             * p4est_quadrant_first_descendant()) that is the first
-                             * location for that process in my domain in the
-                             * post repartitioning distribution (mimicking the global_first_position array) */
+static p4est_gloidx_t *
+p4est_fused_prefix_sum (p4est_locidx_t * counts, int mpisize)
 {
-  int i,j;
-  int mpisize = p4est->mpisize;
-  int mpirank = p4est->mpirank;
-  int mpiret;
-  int size = *p_last + 1 - *p_first;
-  int QMAXLEVEL;
-  p4est_topidx_t which_tree;
-  p4est_tree_t tree;
-  const p4est_topidx_t first_local_tree = p4est->first_local_tree;
-  const p4est_topidx_t last_local_tree = p4est->last_local_tree;
-  p4est_gloidx_t *post_offsets;
-  p4est_gloidx_t *pre_offsets;
-  p4est_gloidx_t *local_tree_last_quad_index;
-  int first, last, nrecvs, nsends, pre_first, pre_last;
-  p4est_quadrant_t *recv_buf;
-  MPI_Request *recv_req;
-  MPI_Request *send_req;
+  int i;
+  p4est_gloidx_t offset;
+  p4est_gloidx_t *offsets = P4EST_ALLOC(p4est_gloidx_t, mpisize + 1);
 
-  /* convert counts into offsets via prefix sum */
-  post_offsets = P4EST_ALLOC (p4est_gloidx_t, mpisize + 1);
+  for (i = 0, offset = 0; i < mpisize; i++) {
+    p4est_locidx_t count = counts[i];
 
-  {
-    p4est_gloidx_t offset = 0;
-    for (i = 0; i < mpisize; i++) {
-      p4est_locidx_t count = post_num_quads_in_proc[i];
-
-      post_offsets[i] = offset;
-      offset += count;
-    }
-    post_offsets[mpisize] = offset;
+    offsets[i] = offset;
+    offset += count;
   }
+  offsets[mpisize] = offset;
 
-  pre_offsets = P4EST_ALLOC (p4est_gloidx_t, mpisize);
-
-  {
-	for (i = 0; i < mpisize; i++) {
-	  pre_offsets[i] = p4est->global_first_quadrant[i + 1] - 1;
-	}
-  }
-
-
-  /* Question to answer: what is p_first, the first process rank whose post-partition
-   * domain, will overlap my current domain ? */
-  /* TODO: make sure we don't update the offset before this point */
-  {
-    p4est_gloidx_t my_start;
-    p4est_gloidx_t *array_loc;
-
-    my_start = p4est->global_first_quadrant[mpirank];
-    array_loc = (p4est_gloidx_t *) bsearch ((void *) &my_start,
-                                            (void *) post_offsets,
-                                            (size_t) mpisize,
-                                            sizeof(p4est_gloidx_t),
-                                            p4est_gloidx_interval_compar);
-    P4EST_ASSERT (array_loc != NULL);
-    *p_first = first = (array_loc - post_offset);
-    P4EST_ASSERT (*p_first >= 0 && *p_first < mpisize);
-  }
-
-  /* Question to answer: what is p_last, the last process rank whose post-partition
-   * domain, will overlap my current domain ? */
-  /* TODO: make sure we don't update the offset before this point */
-  {
-    p4est_gloidx_t my_last;
-    p4est_gloidx_t *array_loc;
-
-    my_last = p4est->global_first_quadrant[mpirank+1] - 1;
-    array_loc = (p4est_gloidx_t *) bsearch ((void *) &my_last,
-                                            (void *) post_offsets,
-                                            (size_t) mpisize,
-                                            sizeof(p4est_gloidx_t),
-                                            p4est_gloidx_interval_compar);
-    P4EST_ASSERT (array_loc != NULL);
-    *p_last = last = (array_loc - post_offset);
-    P4EST_ASSERT (*p_last >= 0 && *p_last < mpisize);
-  }
-
-  /* Question to answer: what is pre_first, the first process rank whose pre-partition
-   * domain, will overlap my post partition domain ? */
-  /* TODO: make sure we don't update the offset before this point */
-  {
-    p4est_gloidx_t post_start;
-    p4est_gloidx_t *array_loc;
-
-	post_start =  post_offsets[mpirank];
-
-	array_loc = (p4est_gloidx_t *) bsearch ((void *) &post_start;
-											(void *) pre_offsets;
-											(size_t) mpisize,
-											sizeof(p4est_gloidx_t),
-											p4est_gloidx_interval_compar);
-
-    P4EST_ASSERT (array_loc != NULL);
-    pre_first = array_loc; //?? what is post_offset ? (w/o s)
-    P4EST_ASSERT (pre_first >= 0 && pre_first < mpisize);
-  }
-
-  /* Question to answer: what is pre_last, the last process rank whose pre-partition
-   * domain, will overlap my post partition domain ? */
-  /* TODO: make sure we don't update the offset before this point */
-  {
-    p4est_gloidx_t post_last;
-    p4est_gloidx_t *array_loc;
-
-	post_last =  post_offsets[mpirank +1] - 1 ; 
-
-	array_loc = (p4est_gloidx_t *) bsearch ((void *) &post_last;
-											(void *) pre_offsets;
-											(size_t) mpisize,
-											sizeof(p4est_gloidx_t),
-											p4est_gloidx_interval_compar);
-
-    P4EST_ASSERT (array_loc != NULL);
-    pre_last = array_loc;
-    P4EST_ASSERT (pre_last >= 0 && pre_last < mpisize);
-  }
-
-
-
-  nrecvs = last + 1 - first;
-
-  recv_buf = P4EST_ALLOC(p4est_quadrant_t, nrecvs);
-  recv_req = P4EST_ALLOC(MPI_Request, nrecvs);//
-
-  for (i = first, j = 0; i < last; i++) {
-    if (post_num_quads_in_proc[i]) {
-      mpiret = sc_MPI_Irecv(&recv_buf[j],sizeof(p4est_quadrant_t), MPI_BYTE,
-                            i, P4EST_COMM_FUSED_PART_1, p4est->mpicomm,
-                            &recv_req[j]);
-      SC_CHECK_MPI(mpiret);
-      j++;
-    }
-  }
-
-  nsends = pre_last + 1 - pre_first;
-
-  send_req = P4EST_ALLOC(MPI_Request, nsends);
-
-  for (i = pre_start, j = 0; i < pre_last; i++) {
-    // if clause here?
-    mpiret = sc_MPI_Isend(p4est->global_first_position , sizeof(p4est_quadrant_t), MPI_BYTE,
-                          i, P4EST_COMM_FUSED_PART_1, p4est->mpicomm
-                          &send_req[j]);
-    SC_CHECK_MPI(mpiret);
-    j++;
-  }
-
-  mpiret = sc_MPI_Waitall (nrecvs, recv_req, MPI_STATUSES_IGNORE); SC_CHECK_MPI(mpiret);
-  mpiret = sc_MPI_Waitall (nsends, send_req, MPI_STATUSES_IGNORE); SC_CHECK_MPI(mpiret);
-
-
-  *post_first_locations = recv_buf;
-
+  return offsets;
 }
 
-/* TODO: put this in an internal header file */
-p4est_locidx_t * p4est_partition_compute(p4est_t *p4est, int partition_for_coarsening,
-                                         p4est_gloidx_t global_num_quadrants, p4est_weight_t weight_fn);
+static int
+p4est_fused_key_locate (const p4est_gloidx_t *array, p4est_gloidx_t key, int mpisize)
+{
+  ptrdiff_t           diff;
+  p4est_gloidx_t     *array_loc;
+
+  array_loc = (p4est_gloidx_t *) bsearch ((void *) &key,
+                                          (void *) array,
+                                          (size_t) mpisize,
+                                          sizeof (p4est_gloidx_t),
+                                          p4est_gloidx_interval_compar);
+  P4EST_ASSERT (array_loc != NULL);
+  diff = array_loc - array;
+  P4EST_ASSERT (diff >= 0 && diff < (ptrdiff_t) mpisize);
+  P4EST_ASSERT (array[diff] <= key && key < array[diff + 1]);
+  return (int) diff;
+}
 
 static void
-p4est_adapt_fused_partition_ghost (p4est_t * p4est, int repartition,
+p4est_fused_overlap_compute (const p4est_gloidx_t * offsets,
+                             const p4est_gloidx_t key[2],
+                             int size,
+                             int *p_first, /* the lowest offset range whose first position is >= key[0] */
+                             int *p_last)  /* the offsets range that contains key[1] - 1 */
+{
+  int first, last;
+
+  P4EST_ASSERT (key[1] > key[0]);
+
+  first = last = p4est_fused_key_locate (offsets, key[0], size);
+  /* We could search for the last key, but we're optimizing for the case when
+   * $(last - first) \in O(1)$ */
+  while (offsets[last + 1] < key[1]) {
+    last++;
+  }
+  if (offsets[first] < key[0]) {
+    first++;
+  }
+  else {
+    while (first > 0 && offsets[first - 1] >= key[0]) {
+      first--;
+    }
+  }
+  P4EST_ASSERT (offsets[first] >= key[0]);
+  P4EST_ASSERT (first == 0 || offsets[first - 1] < key[0]);
+  P4EST_ASSERT (offsets[last] < key[1]);
+  P4EST_ASSERT (offsets[last + 1] >= key[1]);
+  *p_first = first;
+  *p_last = last;
+}
+
+#if 0
+{
+  int                 i, j;
+  int                 mpiret;
+  int                 size = *p_last + 1 - *p_first;
+  int                 QMAXLEVEL;
+  p4est_topidx_t      which_tree;
+  p4est_tree_t        tree;
+  const p4est_topidx_t first_local_tree = p4est->first_local_tree;
+  const p4est_topidx_t last_local_tree = p4est->last_local_tree;
+  p4est_gloidx_t     *post_offsets;
+  p4est_gloidx_t     *pre_offsets;
+  p4est_gloidx_t     *local_tree_last_quad_index;
+  p4est_quadrant_t   *recv_buf;
+  p4est_quadrant_t    my_post_first_pos;
+  p4est_gloidx_t      my_pre_first, my_pre_last, my_post_first, my_post_last;
+  p4est_topidx_t      flt, llt;
+  MPI_Request         recv_req;
+  MPI_Request        *send_req;
+
+  pre_offsets = p4est->global_first_quadrant;
+
+  my_pre_first = pre_offsets[mpirank];
+  my_pre_last = pre_offsets[mpirank + 1] - 1;
+  my_post_first = post_offsets[mpirank];
+  my_post_last = post_offsets[mpirank + 1] - 1;
+
+  /* Determine which proc's current range contains my new start */
+  pre_first = p4est_fused_key_locate (pre_offsets, my_post_first, size);
+
+  mpiret = sc_MPI_Irecv(&my_post_first_pos, sizeof (p4est_quadrant_t), MPI_BYTE, pre_first,
+                        P4EST_COMM_FUSED_PART_1, p4est->mpicomm, &recv_req);
+  SC_CHECK_MPI (mpiret);
+
+  /* some of the post first positions are in my range: find out which ones
+   * those are and send them to their new owners */
+
+  /* TODO: make sure we don't update the global_first_quadrant before this point */
+  flt = p4est->first_local_tree;
+  llt = p4est->last_local_tree;
+  if (my_pre_last >= my_pre_first) { /* if I have currently have a non-empty partition */
+    int                 post_first, post_last, nsends, pre_first, p;
+    p4est_topidx_t      t;
+
+    /* find the first process whose post-partition starts at or after the
+     * start of my current partition */
+    post_first = p4est_fused_key_locate (post_offsets, my_pre_first, mpisize);
+    if (post_offsets[post_first] < my_pre_first) {
+      post_first++;
+      P4EST_ASSERT (post_offsets[post_first] >= my_pre_first);
+    } else {
+      P4EST_ASSERT (post_offsets[post_first] == my_pre_first);
+      while (post_first > 0 && post_offsets[post_first - 1] == my_pre_first) {
+        post_first--;
+      }
+    }
+    P4EST_ASSERT (post_first == 0 || post_offsets[post_first - 1] < my_pre_first);
+    *p_first = post_first;
+    /* find the last process whose post-partition starts at or before the
+     * end of my current partition */
+    *p_last = post_last = p4est_fused_key_locate (post_offsets, my_pre_last, mpisize);
+    P4EST_ASSERT (post_offsets[post_last + 1] > my_pre_last);
+
+    nsends = SC_MIN (post_last + 1 - post_first, 0);
+
+    send_req = P4EST_ALLOC (MPI_Request, nsends);
+
+    for (p = post_first, t = flt; p <= post_last; p++) {
+      P4EST_ASSERT (post_offsets[p] >= my_pre_first && post_offsets[p] <= my_pre_last);
+
+      if (p && post_offsets[p] == post_offsets[p - 1]) {
+        post_first_positions[p] = post_first_positions[p - 1];
+      } else {
+        p4est_tree_t *tree;
+        p4est_locidx_t local_offset = post_offsets[p] - my_pre_first;
+        p4est_locidx_t tree_offset;
+        p4est_quadran_t *q;
+
+        tree = p4est_tree_array_index (p4est->trees, t);
+        tree_offset = local_offset - tree->quadrants_offset;
+        while (t < llt && tree_offset < 0) {
+          t++;
+          tree = p4est_tree_array_index (p4est->trees, t);
+          tree_offset = local_offset - tree->quadrants_offset;
+        }
+        P4EST_ASSERT (t <= llt && tree_offset >= 0 && (size_t) tree_offset < tree->quadrants->elem_count);
+        q = p4est_quadrant_array_index (&tree->quadrants, tree_offset);
+        p4est_quadrant_first_descendant (q, &post_first_positions[p], P4EST_QMAXLEVEL);
+      }
+      mpiret = sc_MPI_Isend(&post_first_position[p], sizeof (p4est_quadrant_t), MPI_BYTE,
+                            p, P4EST_COMM_FUSED_PART_1, p4est->mpicomm, &send_req[p - post_first]);
+      SC_CHECK_MPI (mpiret);
+    }
+  }
+  *post_first_locations = post_first_positions;
+  *send_req_p = send_req;
+  *post_offsets_p = post_offsets;
+}
+#endif
+
+/* TODO: put this in an internal header file */
+p4est_locidx_t     *p4est_partition_compute (p4est_t * p4est,
+                                             int partition_for_coarsening,
+                                             p4est_gloidx_t
+                                             global_num_quadrants,
+                                             p4est_weight_t weight_fn);
+
+static void
+p4est_adapt_fused_partition_ghost (p4est_t * p4est,
+                                   p4est_ghost_t ghost,
+                                   int repartition,
                                    int partition_for_coarsening,
                                    int ghost_layer_width,
                                    p4est_connect_type_t
@@ -397,39 +406,82 @@ p4est_adapt_fused_partition_ghost (p4est_t * p4est, int repartition,
                                    p4est_weight_t weight_fn,
                                    p4est_ghost_t ** ghost_out)
 {
-#if 0
-  if (repartition) {
-    p4est_partition (p4est, partition_for_coarsening, weight_fn);
-  }
-#else
-  p4est_locidx_t *post_num_quads_in_proc;
-  int             p_first, p_last;
-  p4est_quadrant_t *post_first_locations;
-
-  post_num_quads_in_proc = p4est_partition_compute (p4est, partition_for_coarsening,
-                                               -1, weight_fn);
-
-  /* From the number of quadrants in each proc in the new partition, compute
-   * the first quadrant */
-
-  p4est_fused_overlap_compute (p4est, post_num_quads_in_proc, &p_first, &p_last,
-                               &post_first_locations);
-
-
-  P4EST_FREE (post_num_quads_in_proc);
-#endif
-  if (ghost_layer_width > 0) {
-    int                 i;
-
-    *ghost_out = p4est_ghost_new (p4est, ghost_type);
-    for (i = 1; i < ghost_layer_width; i++) {
-      p4est_ghost_expand (p4est, *ghost_out);
+  if (ghost == NULL) { /* if we don't have a ghost layer, use the existing methods */
+    if (repartition) {
+      p4est_partition (p4est, partition_for_coarsening, weight_fn);
     }
+    if (ghost_layer_width > 0) {
+      int                 i;
+
+      *ghost_out = p4est_ghost_new (p4est, ghost_type);
+      for (i = 1; i < ghost_layer_width; i++) {
+        p4est_ghost_expand (p4est, *ghost_out);
+      }
+    }
+  }
+  else {
+    p4est_locidx_t     *post_num_quads_in_proc;
+    p4est_gloidx_t     *post_offsets;
+    p4est_quadrant_t   *post_first_positions;
+    p4est_ghost_t      *pre_ghost = *ghost_out;
+    int                 mpisize = p4est->mpisize;
+    int                 mpirank = p4est->mpirank;
+    p4est_gloidx_t      my_pre_first, next_pre_first;
+    const p4est_gloidx_t *pre_offsets;
+
+    post_num_quads_in_proc =
+                            p4est_partition_compute (p4est, partition_for_coarsening, -1, weight_fn);
+    post_offsets = p4est_fused_prefix_sum (post_num_quads_in_proc, mpisize);
+    P4EST_FREE (post_num_quads_in_proc);
+    pre_offsets = p4est->global_first_quadrant;
+
+    post_first_positions = P4EST_ALLOC_ZERO (p4est_quadrant_t, mpisize + 1);
+
+    my_pre_first = pre_offsets[mpirank];
+    next_pre_first = pre_offsets[mpirank+1];
+
+    if (my_pre_first < next_pre_first) {
+      p4est_topidx-t      llt = p4est->last_local_tree;
+      p4est_topidx_t      t = p4est->first_local_tree;
+      p4est_tree_t       *tree;
+      int                 p, p_first, p_last;
+
+      /* From the number of quadrants in each proc in the new partition, compute
+       * the first quadrant for procs that I know */
+      p4est_fused_overlap_compute (post_offsets, &pre_offsets[mpirank], post_offsets, &p_first, &p_last);
+      tree = p4est_tree_array_index (p4est->trees, t);
+      for (p = p_first; p <= p_last; p++) {
+        p4est_gloidx_t p_offset = post_offsets[p];
+
+        P4EST_ASSERT (p_offset >= pre_offsets[mpirank] && p_offset < pre_offsets[mpirank + 1]);
+
+        if (p && p_offset == post_offsets[p - 1]) {
+          post_first_positions[p] = post_first_positions[p - 1];
+        } else {
+          p4est_locidx_t local_offset = (p4est_locidx_t) p_offset - my_pre_first;
+          p4est_locidx_t tree_offset;
+          p4est_quadrant_t *q;
+
+          tree_offset = local_offset - tree->quadrants_offset;
+          while (t < llt && tree_offset < 0) {
+            t++;
+            tree++;
+            tree_offset = local_offset - tree->quadrants_offset;
+          }
+          P4EST_ASSERT (t <= llt && tree_offset >= 0 && (size_t) tree_offset < tree->quadrants->elem_count);
+          q = p4est_quadrant_array_index (&tree->quadrants, tree_offset);
+          p4est_quadrant_first_descendant (q, &post_first_positions[p], P4EST_QMAXLEVEL);
+          post_first_positions[p].p.which_tree = t;
+        }
+      }
+    }
+    ierr = sc_MPI_Allreduce
   }
 }
 
 void
 p4est_adapt_fused (p4est_t * p4est,
+                   p4est_ghost_t * ghost,
                    const int8_t * adapt_flag,
                    int copy_data,
                    p4est_connect_type_t
@@ -477,7 +529,7 @@ p4est_adapt_fused (p4est_t * p4est,
 
   P4EST_FREE (aflag_copy);
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
-  p4est_adapt_fused_partition_ghost (*p4est_out, repartition,
+  p4est_adapt_fused_partition_ghost (*p4est_out, ghost, repartition,
                                      partition_for_coarsening,
                                      ghost_layer_width, ghost_type, weight_fn,
                                      ghost_out);
