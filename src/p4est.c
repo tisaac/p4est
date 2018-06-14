@@ -683,13 +683,47 @@ p4est_refine_ext (p4est_t * p4est, int refine_recursive, int allowed_level,
                   p4est_refine_t refine_fn, p4est_init_t init_fn,
                   p4est_replace_t replace_fn)
 {
+  p4est_gloidx_t      old_gnq;
+
+  if (allowed_level < 0) {
+    allowed_level = P4EST_QMAXLEVEL;
+  }
+  P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
+                            "_refine with %lld total quadrants,"
+                            " allowed level %d\n",
+                            (long long) p4est->global_num_quadrants,
+                            allowed_level);
+  p4est_log_indent_push ();
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  /* remember input quadrant count; it will not decrease */
+  old_gnq = p4est->global_num_quadrants;
+  p4est_refine_ext_dirty (p4est, refine_recursive, allowed_level, refine_fn,
+                          init_fn, replace_fn);
+  /* compute global number of quadrants */
+  p4est_comm_count_quadrants (p4est);
+  P4EST_ASSERT (p4est->global_num_quadrants >= old_gnq);
+  if (old_gnq != p4est->global_num_quadrants) {
+    ++p4est->revision;
+  }
+
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  p4est_log_indent_pop ();
+  P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
+                            "_refine with %lld total quadrants\n",
+                            (long long) p4est->global_num_quadrants);
+}
+
+void
+p4est_refine_ext_dirty (p4est_t * p4est, int refine_recursive,
+                        int allowed_level, p4est_refine_t refine_fn,
+                        p4est_init_t init_fn, p4est_replace_t replace_fn)
+{
 #ifdef P4EST_ENABLE_DEBUG
   size_t              quadrant_pool_size, data_pool_size;
 #endif
   int                 firsttime;
   int                 i, maxlevel;
   p4est_topidx_t      nt;
-  p4est_gloidx_t      old_gnq;
   size_t              incount, current, restpos, movecount;
   sc_list_t          *list;
   p4est_tree_t       *tree;
@@ -705,18 +739,8 @@ p4est_refine_ext (p4est_t * p4est, int refine_recursive, int allowed_level,
   if (allowed_level < 0) {
     allowed_level = P4EST_QMAXLEVEL;
   }
-  P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
-                            "_refine with %lld total quadrants,"
-                            " allowed level %d\n",
-                            (long long) p4est->global_num_quadrants,
-                            allowed_level);
-  p4est_log_indent_push ();
-  P4EST_ASSERT (p4est_is_valid (p4est));
   P4EST_ASSERT (0 <= allowed_level && allowed_level <= P4EST_QMAXLEVEL);
   P4EST_ASSERT (refine_fn != NULL);
-
-  /* remember input quadrant count; it will not decrease */
-  old_gnq = p4est->global_num_quadrants;
 
   /*
      q points to a quadrant that is an array member
@@ -911,18 +935,6 @@ p4est_refine_ext (p4est_t * p4est, int refine_recursive, int allowed_level,
 
   sc_list_destroy (list);
 
-  /* compute global number of quadrants */
-  p4est_comm_count_quadrants (p4est);
-  P4EST_ASSERT (p4est->global_num_quadrants >= old_gnq);
-  if (old_gnq != p4est->global_num_quadrants) {
-    ++p4est->revision;
-  }
-
-  P4EST_ASSERT (p4est_is_valid (p4est));
-  p4est_log_indent_pop ();
-  P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
-                            "_refine with %lld total quadrants\n",
-                            (long long) p4est->global_num_quadrants);
 }
 
 void
@@ -933,10 +945,40 @@ p4est_coarsen (p4est_t * p4est, int coarsen_recursive,
 }
 
 void
-p4est_coarsen_ext (p4est_t * p4est,
-                   int coarsen_recursive, int callback_orphans,
-                   p4est_coarsen_t coarsen_fn, p4est_init_t init_fn,
-                   p4est_replace_t replace_fn)
+p4est_coarsen_ext (p4est_t * p4est, int coarsen_recursive,
+                   int callback_orphans, p4est_coarsen_t coarsen_fn,
+                   p4est_init_t init_fn, p4est_replace_t replace_fn)
+{
+  p4est_gloidx_t      old_gnq;
+
+  P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
+                            "_coarsen with %lld total quadrants\n",
+                            (long long) p4est->global_num_quadrants);
+  p4est_log_indent_push ();
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  /* remember input quadrant count; it will not increase */
+  old_gnq = p4est->global_num_quadrants;
+  p4est_coarsen_ext_dirty (p4est, coarsen_recursive, callback_orphans,
+                           coarsen_fn, init_fn, replace_fn);
+  /* compute global number of quadrants */
+  p4est_comm_count_quadrants (p4est);
+  P4EST_ASSERT (p4est->global_num_quadrants <= old_gnq);
+  if (old_gnq != p4est->global_num_quadrants) {
+    ++p4est->revision;
+  }
+
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  p4est_log_indent_pop ();
+  P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
+                            "_coarsen with %lld total quadrants\n",
+                            (long long) p4est->global_num_quadrants);
+}
+
+void
+p4est_coarsen_ext_dirty (p4est_t * p4est,
+                         int coarsen_recursive, int callback_orphans,
+                         p4est_coarsen_t coarsen_fn, p4est_init_t init_fn,
+                         p4est_replace_t replace_fn)
 {
 #ifdef P4EST_ENABLE_DEBUG
   size_t              data_pool_size;
@@ -948,22 +990,13 @@ p4est_coarsen_ext (p4est_t * p4est,
   size_t              window, start, length, cidz;
   p4est_locidx_t      num_quadrants, prev_offset;
   p4est_topidx_t      jt;
-  p4est_gloidx_t      old_gnq;
   p4est_tree_t       *tree;
   p4est_quadrant_t   *c[P4EST_CHILDREN];
   p4est_quadrant_t   *cfirst, *clast;
   sc_array_t         *tquadrants;
   p4est_quadrant_t    qtemp;
 
-  P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
-                            "_coarsen with %lld total quadrants\n",
-                            (long long) p4est->global_num_quadrants);
-  p4est_log_indent_push ();
-  P4EST_ASSERT (p4est_is_valid (p4est));
   P4EST_ASSERT (coarsen_fn != NULL);
-
-  /* remember input quadrant count; it will not increase */
-  old_gnq = p4est->global_num_quadrants;
 
   P4EST_QUADRANT_INIT (&qtemp);
 
@@ -1116,18 +1149,6 @@ p4est_coarsen_ext (p4est_t * p4est,
     }
   }
 
-  /* compute global number of quadrants */
-  p4est_comm_count_quadrants (p4est);
-  P4EST_ASSERT (p4est->global_num_quadrants <= old_gnq);
-  if (old_gnq != p4est->global_num_quadrants) {
-    ++p4est->revision;
-  }
-
-  P4EST_ASSERT (p4est_is_valid (p4est));
-  p4est_log_indent_pop ();
-  P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
-                            "_coarsen with %lld total quadrants\n",
-                            (long long) p4est->global_num_quadrants);
 }
 
 /** Check if the insulation layer of a quadrant overlaps anybody.
@@ -1244,6 +1265,35 @@ void
 p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
                    p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
+  p4est_gloidx_t      old_gnq;
+
+  P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
+                            "_balance %s with %lld total quadrants\n",
+                            p4est_connect_type_string (btype),
+                            (long long) p4est->global_num_quadrants);
+  p4est_log_indent_push ();
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  /* remember input quadrant count; it will not decrease */
+  old_gnq = p4est->global_num_quadrants;
+  p4est_balance_ext_dirty (p4est, btype, init_fn, replace_fn);
+  /* compute global number of quadrants */
+  p4est_comm_count_quadrants (p4est);
+  P4EST_ASSERT (p4est->global_num_quadrants >= old_gnq);
+  if (old_gnq != p4est->global_num_quadrants) {
+    ++p4est->revision;
+  }
+  P4EST_ASSERT (p4est_is_valid (p4est));
+  P4EST_ASSERT (p4est_is_balanced (p4est, btype));
+  p4est_log_indent_pop ();
+  P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
+                            "_balance with %lld total quadrants\n",
+                            (long long) p4est->global_num_quadrants);
+}
+
+void
+p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
+                         p4est_init_t init_fn, p4est_replace_t replace_fn)
+{
   const int           rank = p4est->mpirank;
   const int           num_procs = p4est->mpisize;
   int                 j, k, l, m, which;
@@ -1262,7 +1312,6 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   p4est_topidx_t      qtree, nt;
   p4est_topidx_t      first_tree, last_tree;
   p4est_locidx_t      skipped;
-  p4est_gloidx_t      old_gnq;
   p4est_balance_peer_t *peers, *peer;
   p4est_tree_t       *tree;
   p4est_quadrant_t    mylow, nextlow;
@@ -1320,21 +1369,12 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   MPI_Status         *recv_statuses, *jstatus;
 #endif /* P4EST_ENABLE_MPI */
 
-  P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
-                            "_balance %s with %lld total quadrants\n",
-                            p4est_connect_type_string (btype),
-                            (long long) p4est->global_num_quadrants);
-  p4est_log_indent_push ();
-  P4EST_ASSERT (p4est_is_valid (p4est));
 #ifndef P4_TO_P8
   P4EST_ASSERT (btype == P4EST_CONNECT_FACE || btype == P4EST_CONNECT_CORNER);
 #else
   P4EST_ASSERT (btype == P8EST_CONNECT_FACE || btype == P8EST_CONNECT_EDGE ||
                 btype == P8EST_CONNECT_CORNER);
 #endif
-
-  /* remember input quadrant count; it will not decrease */
-  old_gnq = p4est->global_num_quadrants;
 
 #ifdef P4EST_ENABLE_DEBUG
   data_pool_size = 0;
@@ -2397,13 +2437,6 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
 #endif /* P4EST_ENABLE_DEBUG */
 #endif /* P4EST_ENABLE_MPI */
 
-  /* compute global number of quadrants */
-  p4est_comm_count_quadrants (p4est);
-  P4EST_ASSERT (p4est->global_num_quadrants >= old_gnq);
-  if (old_gnq != p4est->global_num_quadrants) {
-    ++p4est->revision;
-  }
-
   /* some sanity checks */
   P4EST_ASSERT ((p4est_locidx_t) all_outcount == p4est->local_num_quadrants);
   P4EST_ASSERT (all_outcount >= all_incount);
@@ -2411,13 +2444,7 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
     P4EST_ASSERT (data_pool_size + all_outcount - all_incount ==
                   p4est->user_data_pool->elem_count);
   }
-  P4EST_ASSERT (p4est_is_valid (p4est));
-  P4EST_ASSERT (p4est_is_balanced (p4est, btype));
   P4EST_VERBOSEF ("Balance skipped %lld\n", (long long) skipped);
-  p4est_log_indent_pop ();
-  P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
-                            "_balance with %lld total quadrants\n",
-                            (long long) p4est->global_num_quadrants);
 }
 
 void

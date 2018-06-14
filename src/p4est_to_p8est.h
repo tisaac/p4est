@@ -193,8 +193,11 @@
 #define p4est_mesh_new_ext              p8est_mesh_new_ext
 #define p4est_copy_ext                  p8est_copy_ext
 #define p4est_refine_ext                p8est_refine_ext
+#define p4est_refine_ext_dirty          p8est_refine_ext_dirty
 #define p4est_coarsen_ext               p8est_coarsen_ext
+#define p4est_coarsen_ext_dirty         p8est_coarsen_ext_dirty
 #define p4est_balance_ext               p8est_balance_ext
+#define p4est_balance_ext_dirty         p8est_balance_ext_dirty
 #define p4est_balance_subtree_ext       p8est_balance_subtree_ext
 #define p4est_partition_ext             p8est_partition_ext
 #define p4est_partition_for_coarsening  p8est_partition_for_coarsening
