@@ -194,6 +194,13 @@ void                p8est_refine_ext (p8est_t * p8est,
                                       p8est_init_t init_fn,
                                       p8est_replace_t replace_fn);
 
+void                p8est_refine_ext_dirty (p8est_t * p8est,
+                                            int refine_recursive,
+                                            int maxlevel,
+                                            p8est_refine_t refine_fn,
+                                            p8est_init_t init_fn,
+                                            p8est_replace_t replace_fn);
+
 /** Coarsen a forest.
  * \param [in,out] p8est The forest is changed in place.
  * \param [in] coarsen_recursive Boolean to decide on recursive coarsening.
@@ -218,6 +225,13 @@ void                p8est_coarsen_ext (p8est_t * p8est, int coarsen_recursive,
                                        p8est_init_t init_fn,
                                        p8est_replace_t replace_fn);
 
+void                p8est_coarsen_ext_dirty (p8est_t * p8est,
+                                             int coarsen_recursive,
+                                             int callback_orphans,
+                                             p8est_coarsen_t coarsen_fn,
+                                             p8est_init_t init_fn,
+                                             p8est_replace_t replace_fn);
+
 /** 2:1 balance the size differences of neighboring elements in a forest.
  * \param [in,out] p8est  The p8est to be worked on.
  * \param [in] btype      Balance type (face, edge, or corner/full).
@@ -233,6 +247,11 @@ void                p8est_balance_ext (p8est_t * p8est,
                                        p8est_connect_type_t btype,
                                        p8est_init_t init_fn,
                                        p8est_replace_t replace_fn);
+
+void                p8est_balance_ext_dirty (p8est_t * p8est,
+                                             p8est_connect_type_t btype,
+                                             p8est_init_t init_fn,
+                                             p8est_replace_t replace_fn);
 
 void                p8est_balance_subtree_ext (p8est_t * p8est,
                                                p8est_connect_type_t btype,

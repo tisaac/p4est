@@ -25,9 +25,13 @@
 #ifdef P4_TO_P8
 #include <p8est_fused.h>
 #include <p8est_bits.h>
+#include <p8est_communication.h>
+#include <p8est_algorithms.h>
 #else
 #include <p4est_fused.h>
 #include <p4est_bits.h>
+#include <p4est_communication.h>
+#include <p4est_algorithms.h>
 #endif /* !P4_TO_P8 */
 
 typedef struct
@@ -263,18 +267,27 @@ p4est_adapt_fused (p4est_t * p4est,
 
   fusion_ctx.coarsen_loop = &coarsen_ctx;
   /* coarsen families where every child's adapt_flag is P4EST_FUSED_COARSEN */
-  p4est_coarsen_ext (*p4est_out, 0, 1, coarsen_in_loop, init_fn, replace_fn);
+  p4est_coarsen_ext_dirty (*p4est_out, 0, 1, coarsen_in_loop, init_fn,
+                           replace_fn);
 
   refine_ctx.counter = 0;
   refine_ctx.refine_flags = aflag_copy;
 
   fusion_ctx.refine_loop = &refine_ctx;
   /* refine all quadrants marked P4EST_FUSED_REFINE */
-  p4est_refine_ext (*p4est_out, 0, P4EST_QMAXLEVEL, refine_in_loop, init_fn,
-                    *replace_fn);
+  p4est_refine_ext_dirty (*p4est_out, 0, P4EST_QMAXLEVEL, refine_in_loop,
+                          init_fn, *replace_fn);
 
   P4EST_FREE (aflag_copy);
-  p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
+  p4est_balance_ext_dirty (*p4est_out, balance_type, init_fn, replace_fn);
+  /* compute global number of quadrants */
+  p4est_comm_count_quadrants (*p4est_out);
+  /* We're not actually checking to see if the revision has changed anything,
+   * but it's better to assume that it has changed than otherwise */
+  ++p4est->revision;
+  /* We should be valid and balanced: this check is missing from p4est_balance_ext_dirty() */
+  P4EST_ASSERT (p4est_is_valid (*p4est_out));
+  P4EST_ASSERT (p4est_is_balanced (*p4est_out, balance_type));
   p4est_adapt_fused_partition_ghost (*p4est_out, repartition,
                                      partition_for_coarsening,
                                      ghost_layer_width, ghost_type, weight_fn,
