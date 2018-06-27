@@ -1862,9 +1862,9 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
     if (p4est->inspect != NULL) {
       p4est->inspect->balance_notify = -MPI_Wtime ();
     }
-    mpiret = sc_notify (notify_alg, receiver_ranks_notify,
-                        num_receivers_notify, sender_ranks_notify,
-                        &num_senders_notify, p4est->mpicomm);
+    mpiret = sc_notify_ext (notify_alg, receiver_ranks_notify,
+                            num_receivers_notify, sender_ranks_notify,
+                            &num_senders_notify, p4est->mpicomm);
     SC_CHECK_MPI (mpiret);
     if (p4est->inspect != NULL) {
       p4est->inspect->balance_notify += MPI_Wtime ();
@@ -1878,9 +1878,9 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
       if (p4est->inspect != NULL) {
         p4est->inspect->balance_notify_allgather = -MPI_Wtime ();
       }
-      mpiret = sc_notify (SC_NOTIFY_ALLGATHER, receiver_ranks_notify,
-                          num_receivers_notify, sender_ranks2, &num_senders2,
-                          p4est->mpicomm);
+      mpiret = sc_notify_ext (SC_NOTIFY_ALLGATHER, receiver_ranks_notify,
+                              num_receivers_notify, sender_ranks2,
+                              &num_senders2, p4est->mpicomm);
       SC_CHECK_MPI (mpiret);
       if (p4est->inspect != NULL) {
         p4est->inspect->balance_notify_allgather += MPI_Wtime ();
