@@ -84,6 +84,7 @@ struct p4est_inspect
   double              balance_notify_allgather;
   int                 use_B;
   sc_notify_alg_t     notify_alg;
+  const int8_t       *pre_adapt_flags;
 };
 
 /** Callback function prototype to replace one set of quadrants with another.
@@ -256,6 +257,7 @@ void                p4est_balance_ext_dirty (p4est_t * p4est,
 void                p4est_balance_subtree_ext (p4est_t * p4est,
                                                p4est_connect_type_t btype,
                                                p4est_topidx_t which_tree,
+                                               const int8_t * pre_adapt_flags,
                                                p4est_init_t init_fn,
                                                p4est_replace_t replace_fn);
 

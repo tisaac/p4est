@@ -53,7 +53,7 @@ SC_EXTERN_C_BEGIN;
  *
  * TODO: Describe the purpose of various switches, counters, and timings.
  *
- * The balance_ranges and balance_notify* times are collected
+ * the balance_ranges and balance_notify* times are collected
  * whenever an inspect structure is present in p8est.
  */
 struct p8est_inspect
@@ -84,6 +84,7 @@ struct p8est_inspect
   double              balance_notify_allgather;
   int                 use_B;
   sc_notify_alg_t     notify_alg;
+  const int8_t       *pre_adapt_flags;
 };
 
 /** Callback function prototype to replace one set of quadrants with another.
@@ -256,6 +257,7 @@ void                p8est_balance_ext_dirty (p8est_t * p8est,
 void                p8est_balance_subtree_ext (p8est_t * p8est,
                                                p8est_connect_type_t btype,
                                                p4est_topidx_t which_tree,
+                                               const int8_t * pre_adapt_flags,
                                                p8est_init_t init_fn,
                                                p8est_replace_t replace_fn);
 

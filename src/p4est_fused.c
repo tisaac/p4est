@@ -246,52 +246,26 @@ p4est_adapt_fused (p4est_t * p4est,
                    p4est_replace_t replace_fn,
                    p4est_t ** p4est_out, p4est_ghost_t ** ghost_out)
 {
-  refine_loop_t       refine_ctx;
-  coarsen_loop_t      coarsen_ctx;
-  fusion_ctx_t        fusion_ctx;
-  void               *orig_ctx;
-  int8_t             *aflag_copy;
+  p4est_inspect_t     inspect;
+  p4est_inspect_t    *inspect_orig;
 
   if (*p4est_out != p4est) {
     *p4est_out = p4est_copy (p4est, copy_data);
   }
-  orig_ctx = (*p4est_out)->user_pointer;
-  (*p4est_out)->user_pointer = (void *) &fusion_ctx;
-
-  aflag_copy = P4EST_ALLOC (int8_t, (size_t) p4est->local_num_quadrants);
-
-  coarsen_ctx.counter_in = 0;
-  coarsen_ctx.counter_out = 0;
-  coarsen_ctx.refine_flags = adapt_flag;
-  coarsen_ctx.rflags_copy = aflag_copy;
-
-  fusion_ctx.coarsen_loop = &coarsen_ctx;
-  /* coarsen families where every child's adapt_flag is P4EST_FUSED_COARSEN */
-  p4est_coarsen_ext_dirty (*p4est_out, 0, 1, coarsen_in_loop, init_fn,
-                           replace_fn);
-
-  refine_ctx.counter = 0;
-  refine_ctx.refine_flags = aflag_copy;
-
-  fusion_ctx.refine_loop = &refine_ctx;
-  /* refine all quadrants marked P4EST_FUSED_REFINE */
-  p4est_refine_ext_dirty (*p4est_out, 0, P4EST_QMAXLEVEL, refine_in_loop,
-                          init_fn, *replace_fn);
-
-  P4EST_FREE (aflag_copy);
-  p4est_balance_ext_dirty (*p4est_out, balance_type, init_fn, replace_fn);
-  /* compute global number of quadrants */
-  p4est_comm_count_quadrants (*p4est_out);
-  /* We're not actually checking to see if the revision has changed anything,
-   * but it's better to assume that it has changed than otherwise */
-  ++p4est->revision;
-  /* We should be valid and balanced: this check is missing from p4est_balance_ext_dirty() */
-  P4EST_ASSERT (p4est_is_valid (*p4est_out));
-  P4EST_ASSERT (p4est_is_balanced (*p4est_out, balance_type));
+  inspect_orig = p4est->inspect;
+  if (!inspect_orig) {
+    memset (&inspect, 0, sizeof (p4est_inspect_t));
+    inspect.notify_alg = sc_notify_alg_default;
+  }
+  else {
+    memcpy (&inspect, inspect_orig, sizeof (p4est_inspect_t));
+  }
+  inspect.pre_adapt_flags = adapt_flag;
+  (*p4est_out)->inspect = &inspect;
+  p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
+  (*p4est_out)->inspect = inspect_orig;
   p4est_adapt_fused_partition_ghost (*p4est_out, repartition,
                                      partition_for_coarsening,
                                      ghost_layer_width, ghost_type, weight_fn,
                                      ghost_out);
-
-  (*p4est_out)->user_pointer = orig_ctx;
 }

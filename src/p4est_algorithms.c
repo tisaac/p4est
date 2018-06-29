@@ -28,12 +28,14 @@
 #include <p8est_communication.h>
 #include <p8est_search.h>
 #include <p8est_balance.h>
+#include <p8est_fused.h>
 #else
 #include <p4est_algorithms.h>
 #include <p4est_bits.h>
 #include <p4est_communication.h>
 #include <p4est_search.h>
 #include <p4est_balance.h>
+#include <p4est_fused.h>
 #endif /* !P4_TO_P8 */
 
 /* htonl is in either of these two */
@@ -2066,6 +2068,7 @@ p4est_balance_replace_recursive (p4est_t * p4est, p4est_topidx_t nt,
 
 static void
 p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
+                           const int8_t * pre_adapt_flags,
                            p4est_init_t init_fn, p4est_replace_t replace_fn,
                            int btype)
 {
@@ -2138,9 +2141,11 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
 
   if (tcount == 1) {
     p = p4est_quadrant_array_index (tquadrants, 0);
-    if (p4est_quadrant_is_equal (p, &root)) {
-      /* nothing to be done, clean up and exit */
-      return;
+    if (!pre_adapt_flags || pre_adapt_flags[0] != P4EST_FUSED_REFINE) {
+      if (p4est_quadrant_is_equal (p, &root)) {
+        /* nothing to be done, clean up and exit */
+        return;
+      }
     }
   }
 
@@ -2153,10 +2158,51 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
   /* get the reduced representation of the tree */
   q = (p4est_quadrant_t *) sc_array_push (inlist);
   p = p4est_quadrant_array_index (tquadrants, 0);
-  p4est_quadrant_sibling (p, q, 0);
+  if (!pre_adapt_flags || pre_adapt_flags[0] == P4EST_FUSED_KEEP) {
+    p4est_quadrant_sibling (p, q, 0);
+  }
+  /* if the quadrant is marked for pre-refinement, add its first child to the
+   * stack */
+  else if (pre_adapt_flags[0] == P4EST_FUSED_REFINE) {
+    if (p->level < P4EST_QMAXLEVEL) {
+      p4est_quadrant_child (p, q, 0);
+    }
+    else {
+      p4est_quadrant_sibling (p, q, 0);
+    }
+  }
+  /* if the quadrant is marked for pre-coarsening, add its parent to the
+   * stack */
+  else {
+    if (p->level > 0) {
+      p4est_quadrant_t    r;
+
+      p4est_quadrant_parent (p, &r);
+      p4est_quadrant_sibling (&r, q, 0);
+    }
+    else {
+      p4est_quadrant_sibling (p, q, 0);
+    }
+  }
   for (iz = 1; iz < tcount; iz++) {
+    p4est_quadrant_t    tempp;
+
     p = p4est_quadrant_array_index (tquadrants, iz);
     P4EST_ASSERT (p4est_quadrant_is_ancestor (&root, p));
+    if (pre_adapt_flags && pre_adapt_flags[iz] != P4EST_FUSED_KEEP) {
+      if (pre_adapt_flags[iz] == P4EST_FUSED_REFINE) {
+        if (p->level < P4EST_QMAXLEVEL) {
+          p4est_quadrant_child (p, &tempp, 0);
+          p = &tempp;
+        }
+      }
+      else {
+        if (p->level > 0) {
+          p4est_quadrant_parent (p, &tempp);
+          p = &tempp;
+        }
+      }
+    }
     p4est_nearest_common_ancestor (p, q, &tempq);
     if (tempq.level >= SC_MIN (q->level, p->level) - 1) {
       if (p->level > q->level) {
@@ -2181,12 +2227,40 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
 
   iz = 0;                       /* tquadrants */
   jz = 0;                       /* outlist */
-  maxlevel = tree->maxlevel;
+  maxlevel = 0;
 
   /* initialize quadrants in outlist */
   while (iz < tcount && jz < ocount) {
     q = p4est_quadrant_array_index (tquadrants, iz);
     p = p4est_quadrant_array_index (outlist, jz);
+
+    if (p4est_quadrant_is_ancestor (p, q)) {
+      int                 k;
+      /* This only happens if there was pre-coarsening */
+      P4EST_ASSERT (pre_adapt_flags
+                    && pre_adapt_flags[iz] == P4EST_FUSED_COARSEN);
+      P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
+      P4EST_ASSERT (p4est_quadrant_is_familyv (q));
+      P4EST_ASSERT (p4est_quadrant_is_parent (p, q));
+      tree->quadrants_per_level[q->level] -= P4EST_CHILDREN;
+      ++tree->quadrants_per_level[p->level];
+      maxlevel = SC_MAX (maxlevel, p->level);
+      p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
+      if (replace_fn) {
+        p4est_quadrant_t   *famp[P4EST_CHILDREN];
+
+        for (k = 0; k < P4EST_CHILDREN; k++) {
+          famp[k] = &q[k];
+        }
+        replace_fn (p4est, which_tree, 1, &p, P4EST_CHILDREN, famp);
+      }
+      for (k = 0; k < P4EST_CHILDREN; k++) {
+        p4est_quadrant_free_data (p4est, &q[k]);
+      }
+      iz += P4EST_CHILDREN;
+      jz++;
+      continue;
+    }
 
     /* watch out for gaps in tquadrants */
     while (p4est_quadrant_compare (p, q) < 0) {
@@ -2229,6 +2303,7 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
     }
     else {
       P4EST_ASSERT (p4est_quadrant_is_equal (q, p));
+      maxlevel = SC_MAX (maxlevel, q->level);
       p->p.user_data = q->p.user_data;
       iz++;
       jz++;
@@ -2536,24 +2611,25 @@ void
 p4est_complete_subtree (p4est_t * p4est,
                         p4est_topidx_t which_tree, p4est_init_t init_fn)
 {
-  p4est_complete_or_balance (p4est, which_tree, init_fn, NULL, 0);
+  p4est_complete_or_balance (p4est, which_tree, NULL, init_fn, NULL, 0);
 }
 
 void
 p4est_balance_subtree (p4est_t * p4est, p4est_connect_type_t btype,
                        p4est_topidx_t which_tree, p4est_init_t init_fn)
 {
-  p4est_complete_or_balance (p4est, which_tree, init_fn, NULL,
+  p4est_complete_or_balance (p4est, which_tree, NULL, init_fn, NULL,
                              p4est_connect_type_int (btype));
 }
 
 void
 p4est_balance_subtree_ext (p4est_t * p4est, p4est_connect_type_t btype,
-                           p4est_topidx_t which_tree, p4est_init_t init_fn,
-                           p4est_replace_t replace_fn)
+                           p4est_topidx_t which_tree,
+                           const int8_t * pre_adapt_flags,
+                           p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
-  p4est_complete_or_balance (p4est, which_tree, init_fn, replace_fn,
-                             p4est_connect_type_int (btype));
+  p4est_complete_or_balance (p4est, which_tree, pre_adapt_flags, init_fn,
+                             replace_fn, p4est_connect_type_int (btype));
 }
 
 size_t

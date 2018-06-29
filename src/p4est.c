@@ -1320,6 +1320,7 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
   p4est_connectivity_t *conn = p4est->connectivity;
   sc_array_t         *qarray, *tquadrants;
   sc_array_t         *borders;
+  const int8_t       *pre_adapt_flags = NULL;
 #ifdef P4EST_ENABLE_DEBUG
   size_t              data_pool_size;
 #endif
@@ -1467,6 +1468,7 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
     p4est->inspect->balance_A_count_in = 0;
     p4est->inspect->balance_A_count_out = 0;
     p4est->inspect->use_B = 0;
+    pre_adapt_flags = p4est->inspect->pre_adapt_flags;
   }
 
   /* loop over all local trees to assemble first send list */
@@ -1477,6 +1479,7 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
   all_incount = 0;
   skipped = 0;
   for (nt = first_tree; nt <= last_tree; ++nt) {
+    const int8_t       *this_pre_adapt_flags = NULL;
     p4est_comm_tree_info (p4est, nt, full_tree, tree_contact, NULL, NULL);
     tree_fully_owned = full_tree[0] && full_tree[1];
     any_face = 0;
@@ -1488,6 +1491,9 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
     }
     tree = p4est_tree_array_index (p4est->trees, nt);
     tquadrants = &tree->quadrants;
+    if (pre_adapt_flags) {
+      this_pre_adapt_flags = &pre_adapt_flags[all_incount];
+    }
     all_incount += tquadrants->elem_count;
 
     /* initial log message for this tree */
@@ -1495,7 +1501,8 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
                     (unsigned long long) tquadrants->elem_count);
 
     /* local balance first pass */
-    p4est_balance_subtree_ext (p4est, btype, nt, init_fn, replace_fn);
+    p4est_balance_subtree_ext (p4est, btype, nt, this_pre_adapt_flags,
+                               init_fn, replace_fn);
     treecount = tquadrants->elem_count;
     P4EST_VERBOSEF ("Balance tree %lld A %llu\n",
                     (long long) nt, (unsigned long long) treecount);
@@ -2441,7 +2448,7 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
 
   /* some sanity checks */
   P4EST_ASSERT ((p4est_locidx_t) all_outcount == p4est->local_num_quadrants);
-  P4EST_ASSERT (all_outcount >= all_incount);
+  P4EST_ASSERT (pre_adapt_flags || all_outcount >= all_incount);
   if (p4est->user_data_pool != NULL) {
     P4EST_ASSERT (data_pool_size + all_outcount - all_incount ==
                   p4est->user_data_pool->elem_count);
