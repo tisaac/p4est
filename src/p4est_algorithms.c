@@ -2197,7 +2197,7 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
         }
       }
       else {
-        if (p->level > 0) {
+        if (p->level > root.level + 1) {
           p4est_quadrant_parent (p, &tempp);
           p = &tempp;
         }
