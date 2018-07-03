@@ -349,11 +349,33 @@ static double
 fusion_compute_h (p4est_t * p4est)
 {
   p4est_topidx_t      flt, llt, t;
+  p4est_connectivity_t *conn = p4est->connectivity;
   double              h_min = -1., h_min_global;
+  int                 numverts = conn->num_vertices, v, d;
   int                 mpierr;
+  double              bbox[3][2] = {{0.}};
 
   flt = p4est->first_local_tree;
   llt = p4est->last_local_tree;
+
+  for (v = 0; v < numverts; v++) {
+    double *vert = &conn->vertices[3 * v];
+
+    if (!v) {
+      for (d = 0; d < 3; d++) {
+        bbox[d][0] = bbox[d][1] = vert[d];
+      }
+    }
+    else {
+      for (d = 0; d < 3; d++) {
+        bbox[d][0] = SC_MIN (bbox[d][0], vert[d]);
+        bbox[d][1] = SC_MAX (bbox[d][1], vert[d]);
+      }
+    }
+  }
+  h_min = sqrt (  SC_SQR((bbox[0][1] - bbox[0][1]))
+                + SC_SQR((bbox[1][1] - bbox[1][0]))
+                + SC_SQR((bbox[2][1] - bbox[2][0])));
 
   for (t = flt; t <= llt; t++) {
     p4est_tree_t       *tree = p4est_tree_array_index (p4est->trees, t);
@@ -516,7 +538,8 @@ main (int argc, char **argv)
   //conn = p4est_connectivity_new_moebius ();
   conn = p4est_connectivity_new_unitsquare ();
 #else
-  conn = p8est_connectivity_new_rotcubes ();
+  //conn = p8est_connectivity_new_rotcubes ();
+  conn = p8est_connectivity_new_unitcube ();
 #endif
 
   p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */ ,
