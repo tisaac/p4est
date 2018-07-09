@@ -460,7 +460,6 @@ main (int argc, char **argv)
   /* TODO: fusion for finite element nodes as well */
   p4est_lnodes_t     *lnodes;   /* runtime option: time lnodes construction */
 #endif
-  sc_notify_type_t    notify_type;
   int                 first_argc;
   int                 num_tests = 3;
   int                 max_level = refine_level;
@@ -472,6 +471,7 @@ main (int argc, char **argv)
   double              velnorm = 0.;
   double              mindist = -1.;
   const char         *out_base_name = NULL;
+  const char         *notify_name;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -498,8 +498,6 @@ main (int argc, char **argv)
   SC_CHECK_MPI (mpiret);
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
 
-  notify_type = SC_NOTIFY_DEFAULT;
-
   /* process command line arguments */
   opt = sc_options_new (argv[0]);
 
@@ -511,9 +509,9 @@ main (int argc, char **argv)
                          "Base name of visualization output");
   sc_options_add_int (opt, 'x', "max-level", &sphere.max_level,
                       sphere.max_level, "Maximum refinement level");
-  sc_options_add_int (opt, 'n', "notify-type", &notify_type,
-                      notify_type,
-                      "Notify algorithm (see sc_notify.h) for enum");
+  sc_options_add_string (opt, 'n', "notify-type", &notify_name,
+                         NULL,
+                         "Notify algorithm (see sc_notify.h) for type strings");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -523,8 +521,13 @@ main (int argc, char **argv)
   }
   sc_options_print_summary (p4est_package_id, SC_LP_PRODUCTION, opt);
 
-  if (notify_type > 0) {
-    sc_notify_type_default = notify_type;
+  if (notify_name) {
+    for (i = 0; i < SC_NOTIFY_NUM_TYPES; i++) {
+      if (!strcmp (notify_name, sc_notify_type_strings[i])) {
+        sc_notify_type_default = i;
+        break;
+      }
+    }
   }
 
   sc_set_log_defaults (NULL, NULL, log_priority);
