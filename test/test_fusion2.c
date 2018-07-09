@@ -353,13 +353,13 @@ fusion_compute_h (p4est_t * p4est)
   double              h_min = -1., h_min_global;
   int                 numverts = conn->num_vertices, v, d;
   int                 mpierr;
-  double              bbox[3][2] = {{0.}};
+  double              bbox[3][2] = { {0.} };
 
   flt = p4est->first_local_tree;
   llt = p4est->last_local_tree;
 
   for (v = 0; v < numverts; v++) {
-    double *vert = &conn->vertices[3 * v];
+    double             *vert = &conn->vertices[3 * v];
 
     if (!v) {
       for (d = 0; d < 3; d++) {
@@ -373,9 +373,9 @@ fusion_compute_h (p4est_t * p4est)
       }
     }
   }
-  h_min = sqrt (  SC_SQR((bbox[0][1] - bbox[0][1]))
-                + SC_SQR((bbox[1][1] - bbox[1][0]))
-                + SC_SQR((bbox[2][1] - bbox[2][0])));
+  h_min = sqrt (SC_SQR ((bbox[0][1] - bbox[0][1]))
+                + SC_SQR ((bbox[1][1] - bbox[1][0]))
+                + SC_SQR ((bbox[2][1] - bbox[2][0])));
 
   for (t = flt; t <= llt; t++) {
     p4est_tree_t       *tree = p4est_tree_array_index (p4est->trees, t);
@@ -460,7 +460,7 @@ main (int argc, char **argv)
   /* TODO: fusion for finite element nodes as well */
   p4est_lnodes_t     *lnodes;   /* runtime option: time lnodes construction */
 #endif
-  int                 notify_alg;
+  sc_notify_type_t    notify_type;
   int                 first_argc;
   int                 num_tests = 3;
   int                 max_level = refine_level;
@@ -498,7 +498,7 @@ main (int argc, char **argv)
   SC_CHECK_MPI (mpiret);
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
 
-  notify_alg = (int) SC_NOTIFY_DEFAULT;
+  notify_type = SC_NOTIFY_DEFAULT;
 
   /* process command line arguments */
   opt = sc_options_new (argv[0]);
@@ -511,8 +511,9 @@ main (int argc, char **argv)
                          "Base name of visualization output");
   sc_options_add_int (opt, 'x', "max-level", &sphere.max_level,
                       sphere.max_level, "Maximum refinement level");
-  sc_options_add_int (opt, 'n', "notify-alg", &notify_alg,
-                      notify_alg, "Notify algorithm (see sc_notify.h) for enum");
+  sc_options_add_int (opt, 'n', "notify-type", &notify_type,
+                      notify_type,
+                      "Notify algorithm (see sc_notify.h) for enum");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -522,8 +523,8 @@ main (int argc, char **argv)
   }
   sc_options_print_summary (p4est_package_id, SC_LP_PRODUCTION, opt);
 
-  if (notify_alg > 0) {
-    sc_notify_alg_default = notify_alg;
+  if (notify_type > 0) {
+    sc_notify_type_default = notify_type;
   }
 
   sc_set_log_defaults (NULL, NULL, log_priority);

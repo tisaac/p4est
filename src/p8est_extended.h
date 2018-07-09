@@ -83,7 +83,7 @@ struct p8est_inspect
   /** time spent in sc_notify_allgather */
   double              balance_notify_allgather;
   int                 use_B;
-  sc_notify_alg_t     notify_alg;
+  sc_notify_t        *notify;
   const int8_t       *pre_adapt_flags;
 };
 

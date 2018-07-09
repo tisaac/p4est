@@ -248,6 +248,7 @@ p4est_adapt_fused (p4est_t * p4est,
 {
   p4est_inspect_t     inspect;
   p4est_inspect_t    *inspect_orig;
+  int                 own_notify = 0;
 
   if (*p4est_out != p4est) {
     *p4est_out = p4est_copy (p4est, copy_data);
@@ -255,14 +256,21 @@ p4est_adapt_fused (p4est_t * p4est,
   inspect_orig = p4est->inspect;
   if (!inspect_orig) {
     memset (&inspect, 0, sizeof (p4est_inspect_t));
-    inspect.notify_alg = sc_notify_alg_default;
   }
   else {
     memcpy (&inspect, inspect_orig, sizeof (p4est_inspect_t));
   }
   inspect.pre_adapt_flags = adapt_flag;
+  if (!inspect.notify) {
+    inspect.notify = sc_notify_new (p4est->mpicomm);
+    own_notify = 1;
+  }
   (*p4est_out)->inspect = &inspect;
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
+  if (own_notify) {
+    sc_notify_destroy (inspect.notify);
+    inspect.notify = NULL;
+  }
   (*p4est_out)->inspect = inspect_orig;
   p4est_adapt_fused_partition_ghost (*p4est_out, repartition,
                                      partition_for_coarsening,
