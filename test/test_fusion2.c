@@ -344,6 +344,8 @@ enum
   FUSION_TIME_GHOST,
   FUSION_TIME_OPTIMIZED,
   FUSION_TIME_NOTIFY,
+  FUSION_BAL_LOAD,
+  FUSION_BAL_ZERO,
   FUSION_NUM_STATS
 };
 
@@ -583,6 +585,8 @@ main (int argc, char **argv)
     snprintf (notify_stat_str, BUFSIZ - 1, "Notify (%s)", notify_name);
     sc_stats_init (&stats[FUSION_TIME_NOTIFY], notify_stat_str);
   }
+  sc_stats_init (&stats[FUSION_BAL_LOAD], "Balance communication non-zero edges");
+  sc_stats_init (&stats[FUSION_BAL_ZERO], "Balance communication zero edges");
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
@@ -785,6 +789,10 @@ main (int argc, char **argv)
         if (inspect.notify) {
           (void) sc_notify_stats_pop (inspect.notify);
         }
+        sc_stats_accumulate (&stats[FUSION_BAL_LOAD],
+                             (double) inspect.balance_load_sends[0]);
+        sc_stats_accumulate (&stats[FUSION_BAL_ZERO],
+                             (double) inspect.balance_zero_sends[0]);
       }
 
       p4est->inspect = NULL;
