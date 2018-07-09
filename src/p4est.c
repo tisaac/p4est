@@ -1266,6 +1266,7 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
                    p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
   p4est_gloidx_t      old_gnq;
+  const int8_t       *pre_adapt_flags = NULL;
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
                             "_balance %s with %lld total quadrants\n",
@@ -1278,8 +1279,11 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   p4est_balance_ext_dirty (p4est, btype, init_fn, replace_fn);
   /* compute global number of quadrants */
   p4est_comm_count_quadrants (p4est);
-  P4EST_ASSERT (p4est->global_num_quadrants >= old_gnq);
-  if (old_gnq != p4est->global_num_quadrants) {
+  if (p4est->inspect) {
+    pre_adapt_flags = p4est->inspect->pre_adapt_flags;
+  }
+  P4EST_ASSERT (pre_adapt_flags || p4est->global_num_quadrants >= old_gnq);
+  if (pre_adapt_flags || old_gnq != p4est->global_num_quadrants) {
     ++p4est->revision;
   }
   P4EST_ASSERT (p4est_is_valid (p4est));
