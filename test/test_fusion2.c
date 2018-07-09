@@ -43,6 +43,7 @@
 #include <sc_flops.h>
 #include <sc_statistics.h>
 #include <sc_options.h>
+#include <sc_notify.h>
 
 #ifndef P4_TO_P8
 static int          refine_level = 5;
@@ -342,6 +343,7 @@ enum
   FUSION_TIME_PARTITION,
   FUSION_TIME_GHOST,
   FUSION_TIME_OPTIMIZED,
+  FUSION_TIME_NOTIFY,
   FUSION_NUM_STATS
 };
 
@@ -472,6 +474,7 @@ main (int argc, char **argv)
   double              mindist = -1.;
   const char         *out_base_name = NULL;
   const char         *notify_name;
+  p4est_inspect_t     inspect;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -521,6 +524,7 @@ main (int argc, char **argv)
   }
   sc_options_print_summary (p4est_package_id, SC_LP_PRODUCTION, opt);
 
+  memset (&inspect, 0, sizeof (p4est_inspect_t));
   if (notify_name) {
     for (i = 0; i < SC_NOTIFY_NUM_TYPES; i++) {
       if (!strcmp (notify_name, sc_notify_type_strings[i])) {
@@ -528,6 +532,7 @@ main (int argc, char **argv)
         break;
       }
     }
+    inspect.notify = sc_notify_new (mpicomm);
   }
 
   sc_set_log_defaults (NULL, NULL, log_priority);
@@ -570,6 +575,7 @@ main (int argc, char **argv)
   sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
   sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
   sc_stats_init (&stats[FUSION_TIME_OPTIMIZED], "Optimized");
+  sc_stats_init (&stats[FUSION_TIME_NOTIFY], "Notify");
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
@@ -753,6 +759,11 @@ main (int argc, char **argv)
       SC_CHECK_ABORT (p4est_ghost_is_equal (gl_copy, ghost_copy_ref),
                       "Instrumented adaptivity cycle ghost layer different from reference\n");
 
+      if (i && inspect.notify) {
+        sc_notify_stats_push (inspect.notify, &stats[FUSION_TIME_NOTIFY]);
+      }
+      p4est->inspect = &inspect;
+
       sc_flops_snap (&fi_opt, &snapshot_opt);
       p4est_adapt_fused (p4est, flags8, 0 /* no data */ ,
                          P4EST_CONNECT_FULL, 1 /* yes repartition */ ,
@@ -764,7 +775,12 @@ main (int argc, char **argv)
       if (i) {
         sc_stats_accumulate (&stats[FUSION_TIME_OPTIMIZED],
                              snapshot_opt.iwtime);
+        if (inspect.notify) {
+          (void) sc_notify_stats_pop (inspect.notify);
+        }
       }
+
+      p4est->inspect = NULL;
 
       SC_CHECK_ABORT (p4est_is_equal (forest_copy_ref, forest_copy_opt, 0),
                       "Optimized adaptivity cycle forest different from reference\n");
@@ -790,6 +806,10 @@ main (int argc, char **argv)
   sc_stats_compute (mpicomm, FUSION_NUM_STATS, stats);
   sc_stats_print (p4est_package_id, SC_LP_ESSENTIAL,
                   FUSION_NUM_STATS, stats, 1, 1);
+
+  if (inspect.notify) {
+    sc_notify_destroy (inspect.notify);
+  }
 
   /* clean up */
   p4est_ghost_destroy (ghost);
