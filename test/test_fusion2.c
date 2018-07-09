@@ -474,6 +474,7 @@ main (int argc, char **argv)
   double              mindist = -1.;
   const char         *out_base_name = NULL;
   const char         *notify_name;
+  char                notify_stat_str[BUFSIZ];
   p4est_inspect_t     inspect;
 
   /* initialize default values for sphere:
@@ -575,7 +576,13 @@ main (int argc, char **argv)
   sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
   sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
   sc_stats_init (&stats[FUSION_TIME_OPTIMIZED], "Optimized");
-  sc_stats_init (&stats[FUSION_TIME_NOTIFY], "Notify");
+  if (!notify_name) {
+    sc_stats_init (&stats[FUSION_TIME_NOTIFY], "Notify");
+  }
+  else {
+    snprintf (notify_stat_str, BUFSIZ - 1, "Notify (%s)", notify_name);
+    sc_stats_init (&stats[FUSION_TIME_NOTIFY], notify_stat_str);
+  }
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
