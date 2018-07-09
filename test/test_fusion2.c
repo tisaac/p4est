@@ -58,6 +58,7 @@ typedef struct
   double              x0[P4EST_DIM];
   double              velocity[P4EST_DIM];
   int                 max_level;
+  int                 min_level;
 }
 fusion_sphere_t;
 
@@ -193,7 +194,7 @@ coarsen_sphere_int_ext (p4est_t * p4est, p4est_topidx_t which_tree,
   fusion_ctx_t       *ctx = p4est_get_fusion_ctx (p4est);
   fusion_sphere_t    *sphere = ctx->sphere;
 
-  if (quadrant->level <= 1) {   /* TODO: make this configurable? */
+  if (quadrant->level <= SC_MAX (1, sphere->min_level)) {
     return 0;
   }
   return !quadrant_on_sphere_boundary (p4est, which_tree, quadrant,
@@ -467,6 +468,7 @@ main (int argc, char **argv)
   int                 first_argc;
   int                 num_tests = 3;
   int                 max_level = refine_level;
+  int                 min_level = 1;
   sc_statinfo_t       stats[FUSION_NUM_STATS];
   sc_options_t       *opt;
   int                 log_priority = SC_LP_ESSENTIAL;
@@ -492,6 +494,7 @@ main (int argc, char **argv)
   sphere.velocity[2] = -0.5;
 #endif
   sphere.max_level = max_level;
+  sphere.min_level = min_level;
 
   for (i = 0; i < P4EST_DIM; i++) {
     velnorm += sphere.velocity[i] * sphere.velocity[i];
@@ -515,6 +518,8 @@ main (int argc, char **argv)
                          "Base name of visualization output");
   sc_options_add_int (opt, 'x', "max-level", &sphere.max_level,
                       sphere.max_level, "Maximum refinement level");
+  sc_options_add_int (opt, 'i', "min-level", &sphere.min_level,
+                      sphere.min_level, "Minimum refinement level");
   sc_options_add_string (opt, 'n', "notify-type", &notify_name,
                          NULL,
                          "Notify algorithm (see sc_notify.h) for type strings");
@@ -555,7 +560,7 @@ main (int argc, char **argv)
 #endif
 
   p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */ ,
-                         1 /* min quadrant level */ ,
+                         sphere.min_level /* min quadrant level */ ,
                          1 /* fill uniform */ ,
                          0 /* data size */ ,
                          NULL, NULL);
