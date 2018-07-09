@@ -1695,6 +1695,8 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
     p4est->inspect->balance_comm_sent = 0;
     p4est->inspect->balance_comm_nzpeers = 0;
     for (k = 0; k < 2; ++k) {
+      p4est->inspect->balance_load_sends[k] = 0;
+      p4est->inspect->balance_load_receives[k] = 0;
       p4est->inspect->balance_zero_sends[k] = 0;
       p4est->inspect->balance_zero_receives[k] = 0;
     }
@@ -1989,6 +1991,8 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
     p4est->inspect->use_B = 1;
 #ifdef P4EST_ENABLE_MPI
     for (k = 0; k < 2; ++k) {
+      p4est->inspect->balance_load_sends[k] = send_load[k];
+      p4est->inspect->balance_load_receives[k] = recv_load[k];
       p4est->inspect->balance_zero_sends[k] = send_zero[k];
       p4est->inspect->balance_zero_receives[k] = recv_zero[k];
     }

@@ -74,6 +74,7 @@ struct p8est_inspect
   size_t              balance_comm_nzpeers;
   size_t              balance_B_count_in;
   size_t              balance_B_count_out;
+  size_t              balance_load_sends[2], balance_load_receives[2];
   size_t              balance_zero_sends[2], balance_zero_receives[2];
   double              balance_A;
   double              balance_comm;

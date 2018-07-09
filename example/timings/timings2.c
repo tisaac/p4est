@@ -501,10 +501,6 @@ main (int argc, char **argv)
   }
 
   p4est->inspect = P4EST_ALLOC_ZERO (p4est_inspect_t, 1);
-  p4est->inspect->use_balance_ranges = use_ranges;
-  p4est->inspect->use_balance_ranges_notify = use_ranges_notify;
-  p4est->inspect->use_balance_verify = use_balance_verify;
-  p4est->inspect->balance_max_ranges = max_ranges;
   P4EST_GLOBAL_STATISTICSF
     ("Balance: new overlap %d new subtree %d borders %d\n", overlap,
      (overlap && subtree), (overlap && borders));
@@ -549,13 +545,6 @@ main (int argc, char **argv)
   sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_OUT],
                  (double) p4est->inspect->balance_B_count_out,
                  "Balance B count outlist");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_RANGES],
-                 p4est->inspect->balance_ranges, "Balance time for ranges");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_NOTIFY],
-                 p4est->inspect->balance_notify, "Balance time for notify");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_NOTIFY_ALLGATHER],
-                 p4est->inspect->balance_notify_allgather,
-                 "Balance time for notify_allgather");
   sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_RECEIVES],
                  p4est->inspect->balance_zero_receives[0],
                  "Balance A zero receives");
