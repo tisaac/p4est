@@ -469,6 +469,7 @@ main (int argc, char **argv)
   int                 num_tests = 3;
   int                 max_level = refine_level;
   int                 min_level = 1;
+  int                 skip_reference = 0;
   sc_statinfo_t       stats[FUSION_NUM_STATS];
   sc_options_t       *opt;
   int                 log_priority = SC_LP_ESSENTIAL;
@@ -520,6 +521,8 @@ main (int argc, char **argv)
                       sphere.max_level, "Maximum refinement level");
   sc_options_add_int (opt, 'i', "min-level", &sphere.min_level,
                       sphere.min_level, "Minimum refinement level");
+  sc_options_add_int (opt, '\0', "skip-reference", &skip_reference,
+                      skip_reference, "skip timing reference fusion algorithm");
   sc_options_add_string (opt, 'n', "notify-type", &notify_name,
                          NULL,
                          "Notify algorithm (see sc_notify.h) for type strings");
@@ -634,112 +637,114 @@ main (int argc, char **argv)
       p4est_vtk_write_file (forest_copy, NULL, buffer);
     }
 
-    /* Once the leaves have been marked, we have sufficient information to
-     * complete a refinement cycle: start the timing at this point */
-    sc_flops_snap (&fi_full, &snapshot_full);
+    if (!skip_reference) {
+      /* Once the leaves have been marked, we have sufficient information to
+       * complete a refinement cycle: start the timing at this point */
+      sc_flops_snap (&fi_full, &snapshot_full);
 
-    /* start the timing of one instance of the timing cycle */
-    /* see sc_flops_snap() / sc_flops_shot() in timings2.c */
+      /* start the timing of one instance of the timing cycle */
+      /* see sc_flops_snap() / sc_flops_shot() in timings2.c */
 
-    /* non-recursive refinement loop: the callback simply checks the flags
-     * that we have defined for which leaves we want to refine */
+      /* non-recursive refinement loop: the callback simply checks the flags
+       * that we have defined for which leaves we want to refine */
 
-    /* TODO: conduct coarsening before refinement.  This requires making a
-     * copy of refine_flags: creating one that is valid after coarsening */
+      /* TODO: conduct coarsening before refinement.  This requires making a
+       * copy of refine_flags: creating one that is valid after coarsening */
 
-    /* make space for copy of flags */
+      /* make space for copy of flags */
 
-    rflags_copy = P4EST_ALLOC (int, p4est->local_num_quadrants);
+      rflags_copy = P4EST_ALLOC (int, p4est->local_num_quadrants);
 
-    sc_flops_snap (&fi_coarsen, &snapshot_coarsen);
+      sc_flops_snap (&fi_coarsen, &snapshot_coarsen);
 
-    /* coarsen copy the flags. Then coarsen the interior and exterior of the
-     * circle */
+      /* coarsen copy the flags. Then coarsen the interior and exterior of the
+       * circle */
 
-    crs_loop_ctx.counter_in = 0;
-    crs_loop_ctx.counter_out = 0;
-    crs_loop_ctx.refine_flags = refine_flags;
-    crs_loop_ctx.rflags_copy = rflags_copy;
-    ctx.coarsen_loop = &crs_loop_ctx;
-    {
-      p4est_locidx_t      n_in = forest_copy->local_num_quadrants;
+      crs_loop_ctx.counter_in = 0;
+      crs_loop_ctx.counter_out = 0;
+      crs_loop_ctx.refine_flags = refine_flags;
+      crs_loop_ctx.rflags_copy = rflags_copy;
+      ctx.coarsen_loop = &crs_loop_ctx;
+      {
+        p4est_locidx_t      n_in = forest_copy->local_num_quadrants;
 
-      p4est_coarsen_ext (forest_copy, 0 /* non-recursive */ ,
-                         1 /* callback on ophans */ , coarsen_in_loop, NULL,
-                         NULL);
-      P4EST_ASSERT (crs_loop_ctx.counter_in == n_in);
-      P4EST_ASSERT (crs_loop_ctx.counter_out ==
-                    forest_copy->local_num_quadrants);
-    }
+        p4est_coarsen_ext (forest_copy, 0 /* non-recursive */ ,
+                           1 /* callback on ophans */ , coarsen_in_loop, NULL,
+                           NULL);
+        P4EST_ASSERT (crs_loop_ctx.counter_in == n_in);
+        P4EST_ASSERT (crs_loop_ctx.counter_out ==
+                      forest_copy->local_num_quadrants);
+      }
 
-    if (!i && ctx.viz_name) {
-      char                buffer[BUFSIZ] = { '\0' };
+      if (!i && ctx.viz_name) {
+        char                buffer[BUFSIZ] = { '\0' };
 
-      snprintf (buffer, BUFSIZ, "%s_first_coarsen", ctx.viz_name);
-      p4est_vtk_write_file (forest_copy, NULL, buffer);
-    }
+        snprintf (buffer, BUFSIZ, "%s_first_coarsen", ctx.viz_name);
+        p4est_vtk_write_file (forest_copy, NULL, buffer);
+      }
 
-    sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
-    if (i) {
-      sc_stats_accumulate (&stats[FUSION_TIME_COARSEN],
-                           snapshot_coarsen.iwtime);
-    }
+      sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_TIME_COARSEN],
+                             snapshot_coarsen.iwtime);
+      }
 
-    sc_flops_snap (&fi_refine, &snapshot_refine);
-    ref_loop_ctx.counter = 0;
-    ref_loop_ctx.refine_flags = rflags_copy;
-    ctx.refine_loop = &ref_loop_ctx;
-    p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
-    sc_flops_shot (&fi_refine, &snapshot_refine);
-    if (i) {
-      sc_stats_accumulate (&stats[FUSION_TIME_REFINE],
-                           snapshot_refine.iwtime);
-    }
+      sc_flops_snap (&fi_refine, &snapshot_refine);
+      ref_loop_ctx.counter = 0;
+      ref_loop_ctx.refine_flags = rflags_copy;
+      ctx.refine_loop = &ref_loop_ctx;
+      p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
+      sc_flops_shot (&fi_refine, &snapshot_refine);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_TIME_REFINE],
+                             snapshot_refine.iwtime);
+      }
 
-    if (!i && ctx.viz_name) {
-      char                buffer[BUFSIZ] = { '\0' };
+      if (!i && ctx.viz_name) {
+        char                buffer[BUFSIZ] = { '\0' };
 
-      snprintf (buffer, BUFSIZ, "%s_second_refine", ctx.viz_name);
-      p4est_vtk_write_file (forest_copy, NULL, buffer);
-    }
+        snprintf (buffer, BUFSIZ, "%s_second_refine", ctx.viz_name);
+        p4est_vtk_write_file (forest_copy, NULL, buffer);
+      }
 
-    P4EST_FREE (rflags_copy);
+      P4EST_FREE (rflags_copy);
 
-    sc_flops_shot (&fi_balance, &snapshot_balance);
-    p4est_balance (forest_copy, P4EST_CONNECT_FULL, NULL);
-    sc_flops_shot (&fi_balance, &snapshot_balance);
-    if (i) {
-      sc_stats_accumulate (&stats[FUSION_TIME_BALANCE],
-                           snapshot_balance.iwtime);
-    }
+      sc_flops_shot (&fi_balance, &snapshot_balance);
+      p4est_balance (forest_copy, P4EST_CONNECT_FULL, NULL);
+      sc_flops_shot (&fi_balance, &snapshot_balance);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_TIME_BALANCE],
+                             snapshot_balance.iwtime);
+      }
 
-    sc_flops_shot (&fi_partition, &snapshot_partition);
-    p4est_partition (forest_copy, 0, NULL);
-    sc_flops_shot (&fi_partition, &snapshot_partition);
-    if (i) {
-      sc_stats_accumulate (&stats[FUSION_TIME_PARTITION],
-                           snapshot_partition.iwtime);
-    }
+      sc_flops_shot (&fi_partition, &snapshot_partition);
+      p4est_partition (forest_copy, 0, NULL);
+      sc_flops_shot (&fi_partition, &snapshot_partition);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_TIME_PARTITION],
+                             snapshot_partition.iwtime);
+      }
 
-    sc_flops_shot (&fi_ghost, &snapshot_ghost);
-    gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
+      sc_flops_shot (&fi_ghost, &snapshot_ghost);
+      gl_copy = p4est_ghost_new (forest_copy, P4EST_CONNECT_FULL);
 
-    sc_flops_shot (&fi_ghost, &snapshot_ghost);
-    if (i) {
-      sc_stats_accumulate (&stats[FUSION_TIME_GHOST], snapshot_ghost.iwtime);
-    }
+      sc_flops_shot (&fi_ghost, &snapshot_ghost);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_TIME_GHOST], snapshot_ghost.iwtime);
+      }
 
-    /* end  the timing of one instance of the timing cycle */
-    sc_flops_shot (&fi_full, &snapshot_full);
-    if (i) {
-      sc_stats_accumulate (&stats[FUSION_FULL_LOOP], snapshot_full.iwtime);
-    }
+      /* end  the timing of one instance of the timing cycle */
+      sc_flops_shot (&fi_full, &snapshot_full);
+      if (i) {
+        sc_stats_accumulate (&stats[FUSION_FULL_LOOP], snapshot_full.iwtime);
+      }
 
-    if (!i && ctx.viz_name) {
-      char                buffer[BUFSIZ] = { '\0' };
+      if (!i && ctx.viz_name) {
+        char                buffer[BUFSIZ] = { '\0' };
 
-      snprintf (buffer, BUFSIZ, "%s_post", ctx.viz_name);
-      p4est_vtk_write_file (forest_copy, NULL, buffer);
+        snprintf (buffer, BUFSIZ, "%s_post", ctx.viz_name);
+        p4est_vtk_write_file (forest_copy, NULL, buffer);
+      }
     }
 
     /* Check instrumented version against the reference version */
@@ -761,19 +766,21 @@ main (int argc, char **argv)
           P4EST_FUSED_REFINE : P4EST_FUSED_COARSEN;
       }
 
-      p4est_adapt_fused_reference (p4est, flags8, 0 /* no data */ ,
-                                   P4EST_CONNECT_FULL,
-                                   1 /* yes repartition */ ,
-                                   0 /* no repartition for coarsening */ ,
-                                   1 /* ghost layer width */ ,
-                                   P4EST_CONNECT_FULL,
-                                   NULL, NULL, NULL, &forest_copy_ref,
-                                   &ghost_copy_ref);
+      if (!skip_reference) {
+        p4est_adapt_fused_reference (p4est, flags8, 0 /* no data */ ,
+                                     P4EST_CONNECT_FULL,
+                                     1 /* yes repartition */ ,
+                                     0 /* no repartition for coarsening */ ,
+                                     1 /* ghost layer width */ ,
+                                     P4EST_CONNECT_FULL,
+                                     NULL, NULL, NULL, &forest_copy_ref,
+                                     &ghost_copy_ref);
 
-      SC_CHECK_ABORT (p4est_is_equal (forest_copy, forest_copy_ref, 0),
-                      "Instrumented adaptivity cycle forest different from reference\n");
-      SC_CHECK_ABORT (p4est_ghost_is_equal (gl_copy, ghost_copy_ref),
-                      "Instrumented adaptivity cycle ghost layer different from reference\n");
+        SC_CHECK_ABORT (p4est_is_equal (forest_copy, forest_copy_ref, 0),
+                        "Instrumented adaptivity cycle forest different from reference\n");
+        SC_CHECK_ABORT (p4est_ghost_is_equal (gl_copy, ghost_copy_ref),
+                        "Instrumented adaptivity cycle ghost layer different from reference\n");
+      }
 
       if (i && inspect.notify) {
         sc_notify_stats_push (inspect.notify, &stats[FUSION_TIME_NOTIFY]);
@@ -802,21 +809,25 @@ main (int argc, char **argv)
 
       p4est->inspect = NULL;
 
-      SC_CHECK_ABORT (p4est_is_equal (forest_copy_ref, forest_copy_opt, 0),
-                      "Optimized adaptivity cycle forest different from reference\n");
-      SC_CHECK_ABORT (p4est_ghost_is_equal (ghost_copy_ref, ghost_copy_opt),
-                      "Optimized adaptivity cycle ghost layer different from reference\n");
+      if (!skip_reference) {
+        SC_CHECK_ABORT (p4est_is_equal (forest_copy_ref, forest_copy_opt, 0),
+                        "Optimized adaptivity cycle forest different from reference\n");
+        SC_CHECK_ABORT (p4est_ghost_is_equal (ghost_copy_ref, ghost_copy_opt),
+                        "Optimized adaptivity cycle ghost layer different from reference\n");
+        p4est_ghost_destroy (ghost_copy_ref);
+        p4est_destroy (forest_copy_ref);
+      }
 
       p4est_ghost_destroy (ghost_copy_opt);
       p4est_destroy (forest_copy_opt);
-      p4est_ghost_destroy (ghost_copy_ref);
-      p4est_destroy (forest_copy_ref);
       P4EST_FREE (flags8);
     }
 
     /* clean up */
     P4EST_FREE (refine_flags);
-    p4est_ghost_destroy (gl_copy);
+    if (!skip_reference) {
+      p4est_ghost_destroy (gl_copy);
+    }
     p4est_destroy (forest_copy);
 
     sc_log_indent_pop_count (p4est_package_id, 2);
