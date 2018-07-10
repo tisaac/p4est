@@ -480,6 +480,7 @@ main (int argc, char **argv)
   const char         *out_base_name = NULL;
   const char         *notify_name;
   char                notify_stat_str[BUFSIZ];
+  int                 ntop, nint, nbot;
   p4est_inspect_t     inspect;
 
   /* initialize default values for sphere:
@@ -508,6 +509,11 @@ main (int argc, char **argv)
   SC_CHECK_MPI (mpiret);
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
 
+  /* grap parameters for notify_nary from command line */
+  ntop = sc_notify_nary_ntop_default;
+  nint = sc_notify_nary_nint_default;
+  nbot = sc_notify_nary_nbot_default;
+
   /* process command line arguments */
   opt = sc_options_new (argv[0]);
 
@@ -523,6 +529,12 @@ main (int argc, char **argv)
                       sphere.min_level, "Minimum refinement level");
   sc_options_add_int (opt, '\0', "skip-reference", &skip_reference,
                       skip_reference, "skip timing reference fusion algorithm");
+  sc_options_add_int (opt, '\0', "ntop", &ntop,
+                      ntop, "wayness of top of sc_notify nary tree");
+  sc_options_add_int (opt, '\0', "nbot", &nbot,
+                      nbot, "wayness of bot of sc_notify nary tree");
+  sc_options_add_int (opt, '\0', "nint", &nint,
+                      nint, "wayness of int of sc_notify nary tree");
   sc_options_add_string (opt, 'n', "notify-type", &notify_name,
                          NULL,
                          "Notify algorithm (see sc_notify.h) for type strings");
@@ -534,6 +546,11 @@ main (int argc, char **argv)
     return 1;
   }
   sc_options_print_summary (p4est_package_id, SC_LP_PRODUCTION, opt);
+
+  /* set parameters for notify_nary from command line */
+  sc_notify_nary_ntop_default = ntop;
+  sc_notify_nary_nint_default = nint;
+  sc_notify_nary_nbot_default = nbot;
 
   memset (&inspect, 0, sizeof (p4est_inspect_t));
   if (notify_name) {
