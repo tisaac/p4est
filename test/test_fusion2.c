@@ -530,15 +530,15 @@ main (int argc, char **argv)
   sc_options_add_int (opt, 'i', "min-level", &sphere.min_level,
                       sphere.min_level, "Minimum refinement level");
   sc_options_add_int (opt, '\0', "skip-reference", &skip_reference,
-                      skip_reference, "skip timing reference fusion algorithm");
-  sc_options_add_int (opt, '\0', "ntop", &ntop,
-                      ntop, "wayness of top of sc_notify nary tree");
-  sc_options_add_int (opt, '\0', "nbot", &nbot,
-                      nbot, "wayness of bot of sc_notify nary tree");
-  sc_options_add_int (opt, '\0', "nint", &nint,
-                      nint, "wayness of int of sc_notify nary tree");
-  sc_options_add_string (opt, 'n', "notify-type", &notify_name,
-                         NULL,
+                      skip_reference,
+                      "skip timing reference fusion algorithm");
+  sc_options_add_int (opt, '\0', "ntop", &ntop, ntop,
+                      "wayness of top of sc_notify nary tree");
+  sc_options_add_int (opt, '\0', "nbot", &nbot, nbot,
+                      "wayness of bot of sc_notify nary tree");
+  sc_options_add_int (opt, '\0', "nint", &nint, nint,
+                      "wayness of int of sc_notify nary tree");
+  sc_options_add_string (opt, 'n', "notify-type", &notify_name, NULL,
                          "Notify algorithm (see sc_notify.h) for type strings");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
@@ -612,10 +612,14 @@ main (int argc, char **argv)
     snprintf (notify_stat_str, BUFSIZ - 1, "Notify (%s)", notify_name);
     sc_stats_init (&stats[FUSION_TIME_NOTIFY], notify_stat_str);
   }
-  sc_stats_init (&stats[FUSION_BAL_LOAD_OUT], "Balance communication non-zero edges out");
-  sc_stats_init (&stats[FUSION_BAL_ZERO_OUT], "Balance communication zero edges out");
-  sc_stats_init (&stats[FUSION_BAL_LOAD_IN], "Balance communication non-zero edges in");
-  sc_stats_init (&stats[FUSION_BAL_ZERO_IN], "Balance communication zero edges in");
+  sc_stats_init (&stats[FUSION_BAL_LOAD_OUT],
+                 "Balance communication non-zero edges out");
+  sc_stats_init (&stats[FUSION_BAL_ZERO_OUT],
+                 "Balance communication zero edges out");
+  sc_stats_init (&stats[FUSION_BAL_LOAD_IN],
+                 "Balance communication non-zero edges in");
+  sc_stats_init (&stats[FUSION_BAL_ZERO_IN],
+                 "Balance communication zero edges in");
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
@@ -714,7 +718,8 @@ main (int argc, char **argv)
       ref_loop_ctx.counter = 0;
       ref_loop_ctx.refine_flags = rflags_copy;
       ctx.refine_loop = &ref_loop_ctx;
-      p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop, NULL);
+      p4est_refine (forest_copy, 0 /* non-recursive */ , refine_in_loop,
+                    NULL);
       sc_flops_shot (&fi_refine, &snapshot_refine);
       if (i) {
         sc_stats_accumulate (&stats[FUSION_TIME_REFINE],
@@ -751,7 +756,8 @@ main (int argc, char **argv)
 
       sc_flops_shot (&fi_ghost, &snapshot_ghost);
       if (i) {
-        sc_stats_accumulate (&stats[FUSION_TIME_GHOST], snapshot_ghost.iwtime);
+        sc_stats_accumulate (&stats[FUSION_TIME_GHOST],
+                             snapshot_ghost.iwtime);
       }
 
       /* end  the timing of one instance of the timing cycle */
@@ -808,6 +814,8 @@ main (int argc, char **argv)
       }
       p4est->inspect = &inspect;
 
+      mpiret = sc_MPI_Barrier (mpicomm);
+      SC_CHECK_MPI (mpiret);
       sc_flops_snap (&fi_opt, &snapshot_opt);
       p4est_adapt_fused (p4est, flags8, 0 /* no data */ ,
                          P4EST_CONNECT_FULL, 1 /* yes repartition */ ,
