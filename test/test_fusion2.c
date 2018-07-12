@@ -484,6 +484,7 @@ main (int argc, char **argv)
   char                notify_stat_str[BUFSIZ];
   int                 ntop, nint, nbot;
   p4est_inspect_t     inspect;
+  sc_notify_type_t    notify_type;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -558,11 +559,12 @@ main (int argc, char **argv)
   if (notify_name) {
     for (i = 0; i < SC_NOTIFY_NUM_TYPES; i++) {
       if (!strcmp (notify_name, sc_notify_type_strings[i])) {
-        sc_notify_type_default = i;
+        notify_type = i;
         break;
       }
     }
     inspect.notify = sc_notify_new (mpicomm);
+    sc_notify_set_type (inspect.notify, notify_type);
   }
 
   sc_set_log_defaults (NULL, NULL, log_priority);
@@ -642,6 +644,14 @@ main (int argc, char **argv)
       P4EST_GLOBAL_PRODUCTIONF ("Timing loop %d\n", i);
     }
     sc_log_indent_push_count (p4est_package_id, 2);
+
+    sc_flops_start (&fi_full);
+    sc_flops_start (&fi_coarsen);
+    sc_flops_start (&fi_refine);
+    sc_flops_start (&fi_balance);
+    sc_flops_start (&fi_partition);
+    sc_flops_start (&fi_ghost);
+    sc_flops_start (&fi_opt);
 
     forest_copy = p4est_copy (p4est, 0 /* do not copy data */ );
     forest_copy->user_pointer = (void *) &ctx;
