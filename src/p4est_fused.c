@@ -591,15 +591,20 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
     }
     if (which_tree[0] == which_tree[1]
         && (maxlevel[0] == alevel || maxlevel[1] == alevel)) {
-      maxlevel[0] = maxlevel[1] = SC_MAX (maxlevel[0], maxlevel[1]);
+      if (maxlevel[0] != alevel) {
+        maxlevel[1] = alevel + 1;
+      }
+      else if (maxlevel[1] != alevel) {
+        maxlevel[0] = alevel + 1;
+      }
     }
     for (s = 0; s < 2; s++) {
       int                 limit = s ? alevel + 1 : 0;
       int                 stride = s ? -1 : 1;
       p4est_quadrant_t    quad = ancestors[s][maxlevel[s]];
       p4est_quadrant_t   *stop =
-                                (which_tree[0] ==
-                                 which_tree[1]) ? &ancestors[s ^ 1][P4EST_QMAXLEVEL] : NULL;
+        (which_tree[0] ==
+         which_tree[1]) ? &ancestors[s ^ 1][P4EST_QMAXLEVEL] : NULL;
 
       for (l = limit; l < maxlevel[s]; l++) {
         compute_reduction_neighbors (p4est, &ancestors[s][l], 1, in_all,
@@ -610,10 +615,11 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
         int                 cid;
 
         quad.p.which_tree = which_tree[s];
-        compute_reduction_neighbors (p4est, &quad, 0, in_all, out_all, in_procs,
-                                     out_procs);
+        compute_reduction_neighbors (p4est, &quad, 0, in_all, out_all,
+                                     in_procs, out_procs);
         cid = p4est_quadrant_child_id (&quad) + stride;
-        while (quad.level > SC_MAX(0, alevel) && (cid < 0 || cid >= P4EST_CHILDREN)) {
+        while (quad.level > SC_MAX (0, alevel)
+               && (cid < 0 || cid >= P4EST_CHILDREN)) {
 
           p4est_quadrant_parent (&quad, &temp);
           quad = temp;
@@ -672,18 +678,19 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
 
 static void
 superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
-                   sc_array_t * super_senders, sc_notify_t *notify, void *ctx)
+                   sc_array_t * super_senders, sc_notify_t * notify,
+                   void *ctx)
 {
-  int i, j, uniq;
-  int *extra;
-  int *recv;
-  int num_recv, num_all;
-  sc_array_t *recv_sort;
+  int                 i, j, uniq;
+  int                *extra;
+  int                *recv;
+  int                 num_recv, num_all;
+  sc_array_t         *recv_sort;
 #ifdef P4EST_ENABLE_DEBUG
-  sc_array_t *extra_copy;
+  sc_array_t         *extra_copy;
 #endif
 
-  p4est_t *p4est = (p4est_t *) ctx;
+  p4est_t            *p4est = (p4est_t *) ctx;
 
   if (!sc_array_is_sorted (receivers, sc_int_compare)) {
     recv_sort = sc_array_new_count (sizeof (int), receivers->elem_count);
@@ -695,7 +702,8 @@ superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
   else {
     recv_sort = receivers;
   }
-  p4est_adapt_fused_compute_insulation_comm (p4est, extra_receivers, super_senders);
+  p4est_adapt_fused_compute_insulation_comm (p4est, extra_receivers,
+                                             super_senders);
 #ifdef P4EST_ENABLE_DEBUG
   extra_copy = sc_array_new_count (sizeof (int), extra_receivers->elem_count);
   sc_array_copy (extra_copy, extra_receivers);
@@ -716,14 +724,14 @@ superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
       j++;
     }
   }
-  for (;i < num_all;i++) {
-    extra[uniq++] = extra[i++];
+  for (; i < num_all; i++) {
+    extra[uniq++] = extra[i];
   }
   sc_array_resize (extra_receivers, uniq);
 #ifdef P4EST_ENABLE_DEBUG
   for (i = 0; i < num_all; i++) {
-    ssize_t r, e;
-    int j = *((int *) sc_array_index_int (extra_copy, i));
+    ssize_t             r, e;
+    int                 j = *((int *) sc_array_index_int (extra_copy, i));
 
     r = sc_array_bsearch (recv_sort, &j, sc_int_compare);
     e = sc_array_bsearch (extra_receivers, &j, sc_int_compare);
@@ -776,7 +784,8 @@ p4est_adapt_fused (p4est_t * p4est,
   }
   type = sc_notify_get_type ((*p4est_out)->inspect->notify);
   if (type == SC_NOTIFY_SUPERSET) {
-    sc_notify_superset_set_callback ((*p4est_out)->inspect->notify, superset_callback, (void *) p4est);
+    sc_notify_superset_set_callback ((*p4est_out)->inspect->notify,
+                                     superset_callback, (void *) p4est);
   }
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
   if (own_notify) {
