@@ -232,6 +232,7 @@ p4est_adapt_fused_partition_ghost (p4est_t * p4est, int repartition,
   }
 }
 
+#if 0
 static int
 p4est_connectivity_get_max_neighbors (p4est_connectivity_t * conn)
 {
@@ -288,6 +289,7 @@ p4est_connectivity_get_max_neighbors (p4est_connectivity_t * conn)
 
   return max;
 }
+#endif
 
 static void
 compute_reduction_neighbors_add (p4est_t * p4est, p4est_quadrant_t * neigh,
@@ -364,23 +366,25 @@ compute_reduction_neighbors_add (p4est_t * p4est, p4est_quadrant_t * neigh,
       uq = &temp;
       p4est_quadrant_set_morton (uq, P4EST_QMAXLEVEL, uid);
     }
-    if (touch && corner_mask) {
+    if (touch & corner_mask) {
       p4est_quadrant_t    cdesc;
 #ifdef P4_TO_P8
       int                 corner = (int) touch >> (P8EST_EDGES + P4EST_FACES);
 #else
       int                 corner = (int) touch >> P4EST_FACES;
 #endif
+      P4EST_ASSERT (1 <= corner && corner < (1 << P4EST_CHILDREN));
+      corner = SC_LOG2_32 (corner);
       P4EST_ASSERT (0 <= corner && corner < P4EST_CHILDREN);
 
       p4est_quadrant_corner_descendant (neigh, &cdesc, corner,
                                         P4EST_QMAXLEVEL);
       if ((lq == NULL || p4est_quadrant_compare (lq, &cdesc) <= 0)
           && (uq == NULL || p4est_quadrant_compare (&cdesc, uq) <= 0)) {
-      }
-      if (!in_all_procs[p]) {
-        in_all_procs[p] = 1;
-        *((int *) sc_array_push (in_procs)) = p;
+        if (!in_all_procs[p]) {
+          in_all_procs[p] = 1;
+          *((int *) sc_array_push (in_procs)) = p;
+        }
       }
     }
     else {
@@ -514,135 +518,135 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
   int                 s;
   int                 alevel;
   int                 l;
-  int                *out_all, *in_all;
+  int                *out_all = NULL, *in_all = NULL;
 
   P4EST_GLOBAL_VERBOSE ("Into compute_reduction_network\n");
 
-  if (p4est_quadrant_is_equal_piggy (&first_desc, &last_desc)) {
-    /* empty process, no neighbors */
-    return;
-  }
-
+  out_all = P4EST_ALLOC_ZERO (int, mpisize);
+  in_all = P4EST_ALLOC_ZERO (int, mpisize);
+  if (!p4est_quadrant_is_equal_piggy (&first_desc, &next_desc)) {
 #if 0
-  maxsize = p4est_connectivity_get_max_neighbors (p4est->connectivity);
-  P4EST_GLOBAL_VERBOSEF ("Maximum number of quadrant neighbors: %d\n",
-                         maxsize);
+    maxsize = p4est_connectivity_get_max_neighbors (p4est->connectivity);
+    P4EST_GLOBAL_VERBOSEF ("Maximum number of quadrant neighbors: %d\n",
+                           maxsize);
 #endif
-  out_all = SC_ALLOC_ZERO (int, mpisize);
-  in_all = SC_ALLOC_ZERO (int, mpisize);
 
-  /* mark remote in */
-  if (next_desc.x == 0 && next_desc.y == 0 &&
+    /* mark remote in */
+    if (next_desc.x == 0 && next_desc.y == 0 &&
 #ifdef P4_TO_P8
-      next_desc.z == 0 &&
+        next_desc.z == 0 &&
 #endif
-      1) {
-    p4est_quadrant_t    root;
+        1) {
+      p4est_quadrant_t    root;
 
-    memset (&root, 0, sizeof (p4est_quadrant_t));
-    p4est_quadrant_last_descendant (&root, &last_desc, P4EST_QMAXLEVEL);
-    last_desc.p.which_tree = next_desc.p.which_tree - 1;
-  }
-  else {
-    uint64_t            id;
-
-    id = p4est_quadrant_linear_id (&next_desc, P4EST_QMAXLEVEL);
-    p4est_quadrant_set_morton (&last_desc, P4EST_QMAXLEVEL, id - 1);
-    last_desc.p.which_tree = next_desc.p.which_tree;
-  }
-  which_tree[0] = first_desc.p.which_tree;
-  which_tree[1] = last_desc.p.which_tree;
-  ancestors[0][P4EST_QMAXLEVEL] = first_desc;
-  ancestors[1][P4EST_QMAXLEVEL] = last_desc;
-  if (which_tree[0] < which_tree[1]) {
-    alevel = -1;
-  }
-  else {
-    p4est_quadrant_t    a;
-
-    p4est_nearest_common_ancestor (&first_desc, &last_desc, &a);
-    alevel = a.level;
-  }
-
-  for (s = 0; s < 2; s++) {
-    int                 mask = (s == 0) ? 0 : P4EST_CHILDREN - 1;
-    int                 limit = s ? alevel + 1 : 0;
-
-    /* compute all ancestors of first and last quadrants */
-    for (l = P4EST_QMAXLEVEL - 1; l >= limit; l--) {
-      p4est_quadrant_parent (&ancestors[s][l + 1], &ancestors[s][l]);
-      ancestors[s][l].p.which_tree = which_tree[s];
+      memset (&root, 0, sizeof (p4est_quadrant_t));
+      p4est_quadrant_last_descendant (&root, &last_desc, P4EST_QMAXLEVEL);
+      last_desc.p.which_tree = next_desc.p.which_tree - 1;
     }
-    if (s) {
-      for (l = 0; l < alevel; l++) {
-        ancestors[1][l] = ancestors[0][l];
+    else {
+      uint64_t            id;
+
+      id = p4est_quadrant_linear_id (&next_desc, P4EST_QMAXLEVEL);
+      p4est_quadrant_set_morton (&last_desc, P4EST_QMAXLEVEL, id - 1);
+      last_desc.p.which_tree = next_desc.p.which_tree;
+    }
+    which_tree[0] = first_desc.p.which_tree;
+    which_tree[1] = last_desc.p.which_tree;
+    ancestors[0][P4EST_QMAXLEVEL] = first_desc;
+    ancestors[1][P4EST_QMAXLEVEL] = last_desc;
+    if (which_tree[0] < which_tree[1]) {
+      alevel = -1;
+    }
+    else {
+      p4est_quadrant_t    a;
+
+      p4est_nearest_common_ancestor (&first_desc, &last_desc, &a);
+      alevel = a.level;
+    }
+
+    for (s = 0; s < 2; s++) {
+      int                 mask = (s == 0) ? 0 : P4EST_CHILDREN - 1;
+      int                 limit = s ? alevel + 1 : 0;
+
+      /* compute all ancestors of first and last quadrants */
+      for (l = P4EST_QMAXLEVEL - 1; l >= limit; l--) {
+        p4est_quadrant_parent (&ancestors[s][l + 1], &ancestors[s][l]);
+        ancestors[s][l].p.which_tree = which_tree[s];
       }
-    }
-    for (l = P4EST_QMAXLEVEL; l > SC_MAX (0, alevel); l--) {
-      int                 cid = p4est_quadrant_child_id (&ancestors[s][l]);
-
-      if (cid ^ mask) {
-        break;
+      if (s) {
+        for (l = 0; l <= alevel; l++) {
+          ancestors[1][l] = ancestors[0][l];
+        }
       }
-    }
-    /* maxlevel[s] is the coarsest refinement of that endpoint
-     * that is entirely in the process */
-    maxlevel[s] = l;
-  }
-  if (which_tree[0] == which_tree[1]
-      && (maxlevel[0] == alevel || maxlevel[1] == alevel)) {
-    maxlevel[0] = maxlevel[1] = SC_MAX (maxlevel[0], maxlevel[1]);
-  }
-  for (s = 0; s < 2; s++) {
-    int                 limit = s ? alevel + 1 : 0;
-    int                 stride = s ? -1 : 1;
-    p4est_quadrant_t    quad = ancestors[s][maxlevel[s]];
-    p4est_quadrant_t   *stop =
-      (which_tree[0] ==
-       which_tree[1]) ? &ancestors[s ^ 1][P4EST_QMAXLEVEL] : NULL;
+      for (l = P4EST_QMAXLEVEL; l > SC_MAX (0, alevel); l--) {
+        int                 cid = p4est_quadrant_child_id (&ancestors[s][l]);
 
-    for (l = limit; l < maxlevel[s]; l++) {
-      compute_reduction_neighbors (p4est, &ancestors[s][l], 1, in_all,
-                                   out_all, in_procs, out_procs);
-    }
-    for (;;) {
-      p4est_quadrant_t    temp;
-      int                 cid;
-
-      compute_reduction_neighbors (p4est, &quad, 0, in_all, out_all, in_procs,
-                                   out_procs);
-      cid = p4est_quadrant_child_id (&quad) + stride;
-      if (quad.level == SC_MAX (0, alevel)) {
-        break;
+        if (cid ^ mask) {
+          break;
+        }
       }
-      while (quad.level > alevel && (cid < 0 || cid >= P4EST_CHILDREN)) {
+      /* maxlevel[s] is the coarsest refinement of that endpoint
+       * that is entirely in the process */
+      maxlevel[s] = l;
+    }
+    if (which_tree[0] == which_tree[1]
+        && (maxlevel[0] == alevel || maxlevel[1] == alevel)) {
+      maxlevel[0] = maxlevel[1] = SC_MAX (maxlevel[0], maxlevel[1]);
+    }
+    for (s = 0; s < 2; s++) {
+      int                 limit = s ? alevel + 1 : 0;
+      int                 stride = s ? -1 : 1;
+      p4est_quadrant_t    quad = ancestors[s][maxlevel[s]];
+      p4est_quadrant_t   *stop =
+                                (which_tree[0] ==
+                                 which_tree[1]) ? &ancestors[s ^ 1][P4EST_QMAXLEVEL] : NULL;
 
-        p4est_quadrant_parent (&quad, &temp);
-        quad = temp;
+      for (l = limit; l < maxlevel[s]; l++) {
+        compute_reduction_neighbors (p4est, &ancestors[s][l], 1, in_all,
+                                     out_all, in_procs, out_procs);
+      }
+      for (;;) {
+        p4est_quadrant_t    temp;
+        int                 cid;
+
+        quad.p.which_tree = which_tree[s];
+        compute_reduction_neighbors (p4est, &quad, 0, in_all, out_all, in_procs,
+                                     out_procs);
         cid = p4est_quadrant_child_id (&quad) + stride;
-      }
-      p4est_quadrant_sibling (&quad, &temp, cid);
-      quad = temp;
-      if (stop && (p4est_quadrant_overlaps (&quad, stop))) {
-        break;
+        while (quad.level > SC_MAX(0, alevel) && (cid < 0 || cid >= P4EST_CHILDREN)) {
+
+          p4est_quadrant_parent (&quad, &temp);
+          quad = temp;
+          cid = p4est_quadrant_child_id (&quad) + stride;
+        }
+        if (quad.level == SC_MAX (0, alevel)) {
+          break;
+        }
+        p4est_quadrant_sibling (&quad, &temp, cid);
+        quad = temp;
+        if (stop && (p4est_quadrant_overlaps (&quad, stop))) {
+          break;
+        }
       }
     }
-  }
-  for (t = which_tree[0] + 1; t < which_tree[1]; t++) {
-    p4est_quadrant_t    root;
+    for (t = which_tree[0] + 1; t < which_tree[1]; t++) {
+      p4est_quadrant_t    root;
 
-    root.x = 0;
-    root.y = 0;
+      root.x = 0;
+      root.y = 0;
 #ifdef P4_TO_P8
-    root.z = 0;
+      root.z = 0;
 #endif
-    root.level = 0;
-    root.p.which_tree = t;
-    compute_reduction_neighbors (p4est, &root, 0, in_all, out_all, in_procs,
-                                 out_procs);
+      root.level = 0;
+      root.p.which_tree = t;
+      compute_reduction_neighbors (p4est, &root, 0, in_all, out_all, in_procs,
+                                   out_procs);
+    }
+    sc_array_sort (in_procs, sc_int_compare);
+    sc_array_sort (out_procs, sc_int_compare);
+    sc_array_uniq (in_procs, sc_int_compare);
+    sc_array_uniq (out_procs, sc_int_compare);
   }
-  sc_array_sort (in_procs, sc_int_compare);
-  sc_array_sort (out_procs, sc_int_compare);
 #ifdef P4EST_ENABLE_DEBUG
   {
     int                *out_all2 = P4EST_ALLOC (int, mpisize);
@@ -656,6 +660,7 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
     for (i = 0; i < mpisize; i++) {
       P4EST_ASSERT (out_all2[i] == out_all[i]);
     }
+    mpiret = sc_MPI_Barrier (p4est->mpicomm);
 
     P4EST_FREE (out_all2);
   }
@@ -663,6 +668,73 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
   P4EST_FREE (in_all);
   P4EST_FREE (out_all);
   P4EST_GLOBAL_VERBOSE ("Done compute_reduction_network\n");
+}
+
+static void
+superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
+                   sc_array_t * super_senders, sc_notify_t *notify, void *ctx)
+{
+  int i, j, uniq;
+  int *extra;
+  int *recv;
+  int num_recv, num_all;
+  sc_array_t *recv_sort;
+#ifdef P4EST_ENABLE_DEBUG
+  sc_array_t *extra_copy;
+#endif
+
+  p4est_t *p4est = (p4est_t *) ctx;
+
+  if (!sc_array_is_sorted (receivers, sc_int_compare)) {
+    recv_sort = sc_array_new_count (sizeof (int), receivers->elem_count);
+    sc_array_copy (recv_sort, receivers);
+    sc_array_sort (recv_sort, sc_int_compare);
+    sc_array_uniq (recv_sort, sc_int_compare);
+    P4EST_ASSERT (recv_sort->elem_count == receivers->elem_count);
+  }
+  else {
+    recv_sort = receivers;
+  }
+  p4est_adapt_fused_compute_insulation_comm (p4est, extra_receivers, super_senders);
+#ifdef P4EST_ENABLE_DEBUG
+  extra_copy = sc_array_new_count (sizeof (int), extra_receivers->elem_count);
+  sc_array_copy (extra_copy, extra_receivers);
+#endif
+  num_all = (int) extra_receivers->elem_count;
+  num_recv = (int) recv_sort->elem_count;
+  extra = (int *) extra_receivers->array;
+  recv = (int *) recv_sort->array;
+  for (i = 0, j = 0, uniq = 0; i < num_all && j < num_recv;) {
+    if (extra[i] < recv[j]) {
+      extra[uniq++] = extra[i++];
+    }
+    else if (extra[i] == recv[j]) {
+      i++;
+      j++;
+    }
+    else {
+      j++;
+    }
+  }
+  for (;i < num_all;i++) {
+    extra[uniq++] = extra[i++];
+  }
+  sc_array_resize (extra_receivers, uniq);
+#ifdef P4EST_ENABLE_DEBUG
+  for (i = 0; i < num_all; i++) {
+    ssize_t r, e;
+    int j = *((int *) sc_array_index_int (extra_copy, i));
+
+    r = sc_array_bsearch (recv_sort, &j, sc_int_compare);
+    e = sc_array_bsearch (extra_receivers, &j, sc_int_compare);
+    P4EST_ASSERT (r < 0 || e < 0);
+    P4EST_ASSERT (r >= 0 || e >= 0);
+  }
+  sc_array_destroy (extra_copy);
+#endif
+  if (recv_sort != receivers) {
+    sc_array_destroy (recv_sort);
+  }
 }
 
 void
@@ -684,13 +756,7 @@ p4est_adapt_fused (p4est_t * p4est,
   p4est_inspect_t     inspect;
   p4est_inspect_t    *inspect_orig;
   int                 own_notify = 0;
-  sc_array_t         *in_procs, *out_procs;
-
-  in_procs = sc_array_new (sizeof (int));
-  out_procs = sc_array_new (sizeof (int));
-  p4est_adapt_fused_compute_insulation_comm (p4est, out_procs, in_procs);
-  sc_array_destroy (out_procs);
-  sc_array_destroy (in_procs);
+  sc_notify_type_t    type;
 
   if (*p4est_out != p4est) {
     *p4est_out = p4est_copy (p4est, copy_data);
@@ -707,6 +773,10 @@ p4est_adapt_fused (p4est_t * p4est,
   if (!(*p4est_out)->inspect->notify) {
     (*p4est_out)->inspect->notify = sc_notify_new (p4est->mpicomm);
     own_notify = 1;
+  }
+  type = sc_notify_get_type ((*p4est_out)->inspect->notify);
+  if (type == SC_NOTIFY_SUPERSET) {
+    sc_notify_superset_set_callback ((*p4est_out)->inspect->notify, superset_callback, (void *) p4est);
   }
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
   if (own_notify) {
