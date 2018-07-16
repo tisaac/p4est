@@ -677,9 +677,9 @@ p4est_adapt_fused_compute_insulation_comm (p4est_t * p4est,
 }
 
 static void
-superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
-                   sc_array_t * super_senders, sc_notify_t * notify,
-                   void *ctx)
+p4est_superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
+                         sc_array_t * super_senders, sc_notify_t * notify,
+                         void *ctx)
 {
   int                 i, j, uniq;
   int                *extra;
@@ -689,8 +689,11 @@ superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
 #ifdef P4EST_ENABLE_DEBUG
   sc_array_t         *extra_copy;
 #endif
+  sc_flopinfo_t       snap;
 
   p4est_t            *p4est = (p4est_t *) ctx;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   if (!sc_array_is_sorted (receivers, sc_int_compare)) {
     recv_sort = sc_array_new_count (sizeof (int), receivers->elem_count);
@@ -743,6 +746,7 @@ superset_callback (sc_array_t * receivers, sc_array_t * extra_receivers,
   if (recv_sort != receivers) {
     sc_array_destroy (recv_sort);
   }
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 void
@@ -765,6 +769,9 @@ p4est_adapt_fused (p4est_t * p4est,
   p4est_inspect_t    *inspect_orig;
   int                 own_notify = 0;
   sc_notify_type_t    type;
+  sc_flopinfo_t       snap;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   if (*p4est_out != p4est) {
     *p4est_out = p4est_copy (p4est, copy_data);
@@ -785,7 +792,7 @@ p4est_adapt_fused (p4est_t * p4est,
   type = sc_notify_get_type ((*p4est_out)->inspect->notify);
   if (type == SC_NOTIFY_SUPERSET) {
     sc_notify_superset_set_callback ((*p4est_out)->inspect->notify,
-                                     superset_callback, (void *) p4est);
+                                     p4est_superset_callback, (void *) p4est);
   }
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
   if (own_notify) {
@@ -797,4 +804,5 @@ p4est_adapt_fused (p4est_t * p4est,
                                      partition_for_coarsening,
                                      ghost_layer_width, ghost_type, weight_fn,
                                      ghost_out);
+  P4EST_FUNC_SHOT (p4est, &snap);
 }

@@ -1481,10 +1481,13 @@ p4est_ghost_new_check (p4est_t * p4est, p4est_connect_type_t btype,
   sc_array_t         *ghost_layer;
   p4est_topidx_t      nt;
   p4est_ghost_t      *gl;
+  sc_flopinfo_t       snap;
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING "_ghost_new %s\n",
                             p4est_connect_type_string (btype));
   p4est_log_indent_push ();
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   gl = P4EST_ALLOC (p4est_ghost_t, 1);
   gl->mpisize = num_procs;
@@ -1995,6 +1998,7 @@ failtest:
 
       p4est_ghost_destroy (gl);
 
+      P4EST_FUNC_SHOT (p4est, &snap);
       return NULL;
     }
   }
@@ -2203,6 +2207,7 @@ failtest:
 
   p4est_log_indent_pop ();
   P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING "_ghost_new\n");
+  P4EST_FUNC_SHOT (p4est, &snap);
   return gl;
 }
 

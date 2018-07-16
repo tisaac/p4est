@@ -344,7 +344,6 @@ enum
   FUSION_TIME_PARTITION,
   FUSION_TIME_GHOST,
   FUSION_TIME_OPTIMIZED,
-  FUSION_TIME_NOTIFY,
   FUSION_BAL_LOAD_OUT,
   FUSION_BAL_ZERO_OUT,
   FUSION_BAL_LOAD_IN,
@@ -481,10 +480,10 @@ main (int argc, char **argv)
   double              mindist = -1.;
   const char         *out_base_name = NULL;
   const char         *notify_name;
-  char                notify_stat_str[BUFSIZ];
   int                 ntop, nint, nbot;
   p4est_inspect_t     inspect;
   sc_notify_type_t    notify_type;
+  sc_statistics_t    *istats;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -607,13 +606,6 @@ main (int argc, char **argv)
   sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
   sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
   sc_stats_init (&stats[FUSION_TIME_OPTIMIZED], "Optimized");
-  if (!notify_name) {
-    sc_stats_init (&stats[FUSION_TIME_NOTIFY], "Notify");
-  }
-  else {
-    snprintf (notify_stat_str, BUFSIZ - 1, "Notify (%s)", notify_name);
-    sc_stats_init (&stats[FUSION_TIME_NOTIFY], notify_stat_str);
-  }
   sc_stats_init (&stats[FUSION_BAL_LOAD_OUT],
                  "Balance communication non-zero edges out");
   sc_stats_init (&stats[FUSION_BAL_ZERO_OUT],
@@ -622,6 +614,9 @@ main (int argc, char **argv)
                  "Balance communication non-zero edges in");
   sc_stats_init (&stats[FUSION_BAL_ZERO_IN],
                  "Balance communication zero edges in");
+
+  istats = sc_statistics_new (mpicomm);
+  inspect.stats = istats;
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
@@ -819,9 +814,6 @@ main (int argc, char **argv)
                         "Instrumented adaptivity cycle ghost layer different from reference\n");
       }
 
-      if (i && inspect.notify) {
-        sc_notify_stats_push (inspect.notify, &stats[FUSION_TIME_NOTIFY]);
-      }
       p4est->inspect = &inspect;
 
       mpiret = sc_MPI_Barrier (mpicomm);
@@ -837,9 +829,6 @@ main (int argc, char **argv)
       if (i) {
         sc_stats_accumulate (&stats[FUSION_TIME_OPTIMIZED],
                              snapshot_opt.iwtime);
-        if (inspect.notify) {
-          (void) sc_notify_stats_pop (inspect.notify);
-        }
         sc_stats_accumulate (&stats[FUSION_BAL_LOAD_OUT],
                              (double) inspect.balance_load_sends[0]);
         sc_stats_accumulate (&stats[FUSION_BAL_ZERO_OUT],
@@ -880,6 +869,10 @@ main (int argc, char **argv)
   sc_stats_compute (mpicomm, FUSION_NUM_STATS, stats);
   sc_stats_print (p4est_package_id, SC_LP_ESSENTIAL,
                   FUSION_NUM_STATS, stats, 1, 1);
+
+  sc_statistics_compute (istats);
+  sc_statistics_print (istats, p4est_package_id, SC_LP_ESSENTIAL, 1, 1);
+  sc_statistics_destroy (istats);
 
   if (inspect.notify) {
     sc_notify_destroy (inspect.notify);

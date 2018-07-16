@@ -26,10 +26,12 @@
 #include <p8est_algorithms.h>
 #include <p8est_communication.h>
 #include <p8est_bits.h>
+#include <p8est_extended.h>
 #else
 #include <p4est_algorithms.h>
 #include <p4est_communication.h>
 #include <p4est_bits.h>
+#include <p4est_extended.h>
 #endif /* !P4_TO_P8 */
 #include <sc_search.h>
 #ifdef P4EST_HAVE_ZLIB
@@ -309,7 +311,10 @@ p4est_comm_count_quadrants (p4est_t * p4est)
   p4est_gloidx_t      qlocal = p4est->local_num_quadrants;
   p4est_gloidx_t     *global_first_quadrant = p4est->global_first_quadrant;
   int                 i;
+  sc_flopinfo_t       snap;
   const int           num_procs = p4est->mpisize;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   global_first_quadrant[0] = 0;
   mpiret = sc_MPI_Allgather (&qlocal, 1, P4EST_MPI_GLOIDX,
@@ -321,6 +326,7 @@ p4est_comm_count_quadrants (p4est_t * p4est)
     global_first_quadrant[i + 1] += global_first_quadrant[i];
   }
   p4est->global_num_quadrants = global_first_quadrant[num_procs];
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 void
@@ -334,6 +340,9 @@ p4est_comm_global_partition (p4est_t * p4est, p4est_quadrant_t * first_quad)
   p4est_tree_t       *tree;
   p4est_quadrant_t   *quadrant;
   p4est_quadrant_t   *pi, input;
+  sc_flopinfo_t       snap;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   SC_BZERO (&p4est->global_first_position[num_procs], 1);
   p4est->global_first_position[num_procs].level = P4EST_QMAXLEVEL;
@@ -389,6 +398,7 @@ p4est_comm_global_partition (p4est_t * p4est, p4est_quadrant_t * first_quad)
 #endif
     P4EST_ASSERT (pi->p.which_tree >= 0 && pi->level == P4EST_QMAXLEVEL);
   }
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 void

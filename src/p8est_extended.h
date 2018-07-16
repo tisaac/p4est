@@ -45,6 +45,7 @@
 #include <p8est_iterate.h>
 #include <p8est_lnodes.h>
 #include <sc_notify.h>
+#include <sc_flops.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -58,16 +59,6 @@ SC_EXTERN_C_BEGIN;
  */
 struct p8est_inspect
 {
-  /** Use sc_ranges to determine the asymmetric communication pattern.
-   * If \a use_balance_ranges is false (the default), sc_notify is used. */
-  int                 use_balance_ranges;
-  /** If true, call both sc_ranges and sc_notify and verify consistency.
-   * Which is actually used is still determined by \a use_balance_ranges. */
-  int                 use_balance_ranges_notify;
-  /** Verify sc_ranges and/or sc_notify as applicable. */
-  int                 use_balance_verify;
-  /** If positive and smaller than p8est_num ranges, overrides it */
-  int                 balance_max_ranges;
   size_t              balance_A_count_in;
   size_t              balance_A_count_out;
   size_t              balance_comm_sent;
@@ -79,14 +70,30 @@ struct p8est_inspect
   double              balance_A;
   double              balance_comm;
   double              balance_B;
-  double              balance_ranges;   /**< time spent in sc_ranges */
-  double              balance_notify;   /**< time spent in sc_notify */
-  /** time spent in sc_notify_allgather */
-  double              balance_notify_allgather;
   int                 use_B;
+  sc_statistics_t    *stats;
+  sc_flopinfo_t       flop;
+  int                 flop_started;
   sc_notify_t        *notify;
   const int8_t       *pre_adapt_flags;
 };
+
+#define P4EST_FUNC_SNAP(p4est,snap)                                              \
+  do {                                                                           \
+    if ((p4est)->inspect && (p4est)->inspect->stats) {                           \
+      if (!(p4est)->inspect->flop_started) {                                     \
+        sc_flops_start (&((p4est)->inspect->flop));                              \
+      }                                                                          \
+      SC_FUNC_SNAP ((p4est)->inspect->stats, &((p4est)->inspect->flop), (snap)); \
+    }                                                                            \
+  } while (0)
+
+#define P4EST_FUNC_SHOT(p4est,snap)                                              \
+  do {                                                                           \
+    if ((p4est)->inspect && (p4est)->inspect->stats) {                           \
+      SC_FUNC_SHOT ((p4est)->inspect->stats, &((p4est)->inspect->flop), (snap)); \
+    }                                                                            \
+  } while (0)
 
 /** Callback function prototype to replace one set of quadrants with another.
  *

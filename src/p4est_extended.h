@@ -45,6 +45,8 @@
 #include <p4est_iterate.h>
 #include <p4est_lnodes.h>
 #include <sc_notify.h>
+#include <sc_statistics.h>
+#include <sc_flops.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -70,9 +72,29 @@ struct p4est_inspect
   double              balance_comm;
   double              balance_B;
   int                 use_B;
+  sc_statistics_t    *stats;
+  sc_flopinfo_t       flop;
+  int                 flop_started;
   sc_notify_t        *notify;
   const int8_t       *pre_adapt_flags;
 };
+
+#define P4EST_FUNC_SNAP(p4est,snap)                                              \
+  do {                                                                           \
+    if ((p4est)->inspect && (p4est)->inspect->stats) {                           \
+      if (!(p4est)->inspect->flop_started) {                                     \
+        sc_flops_start (&((p4est)->inspect->flop));                              \
+      }                                                                          \
+      SC_FUNC_SNAP ((p4est)->inspect->stats, &((p4est)->inspect->flop), (snap)); \
+    }                                                                            \
+  } while (0)
+
+#define P4EST_FUNC_SHOT(p4est,snap)                                              \
+  do {                                                                           \
+    if ((p4est)->inspect && (p4est)->inspect->stats) {                           \
+      SC_FUNC_SHOT ((p4est)->inspect->stats, &((p4est)->inspect->flop), (snap)); \
+    }                                                                            \
+  } while (0)
 
 /** Callback function prototype to replace one set of quadrants with another.
  *

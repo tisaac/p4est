@@ -734,7 +734,10 @@ p4est_refine_ext_dirty (p4est_t * p4est, int refine_recursive,
 #endif
   sc_array_t         *tquadrants;
   p4est_quadrant_t   *family[8];
+  sc_flopinfo_t       snap;
   p4est_quadrant_t    parent, *pp = &parent;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   if (allowed_level < 0) {
     allowed_level = P4EST_QMAXLEVEL;
@@ -935,6 +938,7 @@ p4est_refine_ext_dirty (p4est_t * p4est, int refine_recursive,
 
   sc_list_destroy (list);
 
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 void
@@ -994,7 +998,10 @@ p4est_coarsen_ext_dirty (p4est_t * p4est,
   p4est_quadrant_t   *c[P4EST_CHILDREN];
   p4est_quadrant_t   *cfirst, *clast;
   sc_array_t         *tquadrants;
+  sc_flopinfo_t       snap;
   p4est_quadrant_t    qtemp;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   P4EST_ASSERT (coarsen_fn != NULL);
 
@@ -1149,6 +1156,7 @@ p4est_coarsen_ext_dirty (p4est_t * p4est,
     }
   }
 
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 /** Check if the insulation layer of a quadrant overlaps anybody.
@@ -1365,9 +1373,12 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
   sc_array_t         *receivers, *senders;
   sc_array_t         *in_counts, *out_counts;
   int                *icounts;
+  sc_flopinfo_t       snap;
 #endif /* P4EST_ENABLE_MPI */
   sc_notify_t        *notify = NULL;
   int                 own_notify = 0;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
 #ifndef P4_TO_P8
   P4EST_ASSERT (btype == P4EST_CONNECT_FACE || btype == P4EST_CONNECT_CORNER);
@@ -1749,6 +1760,9 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
     }
   }
 
+  if (p4est->inspect && p4est->inspect->stats) {
+    sc_notify_set_stats (notify, p4est->inspect->stats);
+  }
   sc_notify_payload (receivers, senders, in_counts, out_counts, 0, notify);
   sc_array_destroy (in_counts);
   sender_ranks = (int *) senders->array;
@@ -2161,6 +2175,8 @@ p4est_balance_ext_dirty (p4est_t * p4est, p4est_connect_type_t btype,
                   p4est->user_data_pool->elem_count);
   }
   P4EST_VERBOSEF ("Balance skipped %lld\n", (long long) skipped);
+
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 void
@@ -2179,6 +2195,7 @@ p4est_partition_compute (p4est_t * p4est, int partition_for_coarsening,
                          p4est_weight_t weight_fn)
 {
   p4est_gloidx_t      global_shipped = 0;
+  sc_flopinfo_t       snap;
 #ifdef P4EST_ENABLE_MPI
   int                 mpiret;
   int                 low_source, high_source;
@@ -2208,6 +2225,8 @@ p4est_partition_compute (p4est_t * p4est, int partition_for_coarsening,
   MPI_Status          recv_statuses[2];
   p4est_gloidx_t      num_corrected;
 #endif /* P4EST_ENABLE_MPI */
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   /* allocate new quadrant distribution counts */
   num_quadrants_in_proc = P4EST_ALLOC (p4est_locidx_t, num_procs);
@@ -2295,6 +2314,8 @@ p4est_partition_compute (p4est_t * p4est, int partition_for_coarsening,
 
       /* in particular, there is no need to bumb the revision counter */
       P4EST_ASSERT (global_shipped == 0);
+
+      P4EST_FUNC_SHOT (p4est, &snap);
       return NULL;              /* NULL inidicates no shipping to be done */
     }
 
@@ -2495,6 +2516,7 @@ p4est_partition_compute (p4est_t * p4est, int partition_for_coarsening,
        (long long) num_corrected);
   }
 
+  P4EST_FUNC_SHOT (p4est, &snap);
   return num_quadrants_in_proc;
 }
 
@@ -2507,6 +2529,9 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
 #ifdef P4EST_ENABLE_MPI
   p4est_locidx_t     *num_quadrants_in_proc;
 #endif /* P4EST_ENABLE_MPI */
+  sc_flopinfo_t       snap;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   P4EST_ASSERT (p4est_is_valid (p4est));
   P4EST_GLOBAL_PRODUCTIONF
@@ -2533,6 +2558,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
 
   if (!num_quadrants_in_proc) {
     P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING "_partition no shipping\n");
+    P4EST_FUNC_SHOT (p4est, &snap);
     return 0;
   }
 
@@ -2554,6 +2580,7 @@ p4est_partition_ext (p4est_t * p4est, int partition_for_coarsening,
      (long long) global_shipped,
      global_shipped * 100. / global_num_quadrants);
 
+  P4EST_FUNC_SHOT (p4est, &snap);
   return global_shipped;
 }
 
@@ -2587,6 +2614,9 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   int                *correction, correction_local = 0;
   int                 current_proc, next_proc;
   p4est_gloidx_t      num_moved_quadrants;
+  sc_flopinfo_t       snap;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   /* create array with first quadrants of new partition */
   partition_new = P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
@@ -2981,6 +3011,7 @@ p4est_partition_for_coarsening (p4est_t * p4est,
   P4EST_FREE (correction);
 
   /* return absolute number of moved quadrants */
+  P4EST_FUNC_SHOT (p4est, &snap);
   return num_moved_quadrants;
 #else
   P4EST_ASSERT (num_quadrants_in_proc[0] == p4est->local_num_quadrants);
