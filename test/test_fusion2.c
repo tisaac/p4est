@@ -616,7 +616,6 @@ main (int argc, char **argv)
                  "Balance communication zero edges in");
 
   istats = sc_statistics_new (mpicomm);
-  inspect.stats = istats;
 
   for (i = 0; i <= num_tests; i++) {
     p4est_t            *forest_copy;
@@ -637,6 +636,7 @@ main (int argc, char **argv)
     }
     else {
       P4EST_GLOBAL_PRODUCTIONF ("Timing loop %d\n", i);
+      inspect.stats = istats;
     }
     sc_log_indent_push_count (p4est_package_id, 2);
 
