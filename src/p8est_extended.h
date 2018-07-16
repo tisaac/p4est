@@ -82,6 +82,7 @@ struct p8est_inspect
   do {                                                                           \
     if ((p4est)->inspect && (p4est)->inspect->stats) {                           \
       if (!(p4est)->inspect->flop_started) {                                     \
+        (p4est)->inspect->flop_started = 1;                                      \
         sc_flops_start (&((p4est)->inspect->flop));                              \
       }                                                                          \
       SC_FUNC_SNAP ((p4est)->inspect->stats, &((p4est)->inspect->flop), (snap)); \
