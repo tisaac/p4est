@@ -1451,6 +1451,84 @@ p4est_quadrant_disjoint_parent (const void *a, const void *b)
   return 0;
 }
 
+static void
+p4est_quadrant_array_insert_endpoints (sc_array_t *inlist,
+                                       p4est_quadrant_t *dom,
+                                       p4est_quadrant_t *first_desc,
+                                       p4est_quadrant_t *last_desc)
+{
+  ssize_t si;
+  int minlevel = dom->level + 1;
+  p4est_quadrant_t fd, tempq, tempp;
+  p4est_quadrant_t *q;
+  size_t incount = inlist->elem_count;
+
+  if (first_desc != NULL) {
+    /* make sure that a quadrant at first_desc is represented in inlist */
+    fd = *first_desc;
+    while (fd.level > minlevel && p4est_quadrant_child_id (&fd) == 0) {
+      p4est_quadrant_parent (&fd, &fd);
+    }
+    p4est_quadrant_sibling (&fd, &tempq, 0);
+    si = p4est_find_lower_bound (inlist, &tempq, 0);
+    if (si >= 0) {
+      q = p4est_quadrant_array_index (inlist, si);
+      p4est_nearest_common_ancestor (&tempq, q, &tempp);
+      if (tempp.level < tempq.level - 1) {
+        /* add tempq to inlist */
+        sc_array_resize (inlist, inlist->elem_count + 1);
+        memmove (sc_array_index (inlist, si + 1), sc_array_index (inlist, si),
+                 (incount - si) * inlist->elem_size);
+        q = p4est_quadrant_array_index (inlist, si);
+        *q = tempq;
+        q->p.user_int = 0;
+      }
+    }
+    else {
+      /* add tempq to inlist */
+      q = (p4est_quadrant_t *) sc_array_push (inlist);
+      *q = tempq;
+      q->p.user_int = 0;
+    }
+  }
+
+  if (last_desc != NULL) {
+    /* make sure that a quadrant at last_desc is represented in inlist */
+    tempq = *last_desc;
+    while (tempq.level > minlevel &&
+           p4est_quadrant_child_id (&tempq) == P4EST_CHILDREN - 1) {
+      p4est_quadrant_parent (&tempq, &tempq);
+    }
+    p4est_quadrant_sibling (&tempq, &tempp, 0);
+    si = p4est_find_higher_bound (inlist, last_desc, 0);
+    if (si >= 0) {
+      q = p4est_quadrant_array_index (inlist, si);
+      p4est_nearest_common_ancestor (last_desc, q, &tempq);
+      if (tempq.level < tempp.level - 1) {
+        /* add tempp to inlist */
+        sc_array_resize (inlist, inlist->elem_count + 1);
+        if ((size_t) si < incount - 1) {
+          memmove (sc_array_index (inlist, si + 2),
+                   sc_array_index (inlist, si + 1),
+                   (incount - (si + 1)) * inlist->elem_size);
+        }
+        q = p4est_quadrant_array_index (inlist, si + 1);
+        *q = tempp;
+        q->p.user_int = 0;
+      }
+    }
+    else {
+      /* add tempp to inlist */
+      sc_array_resize (inlist, inlist->elem_count + 1);
+      memmove (sc_array_index (inlist, 1), sc_array_index (inlist, 0),
+               incount * inlist->elem_size);
+      q = p4est_quadrant_array_index (inlist, 0);
+      *q = tempp;
+      q->p.user_int = 0;
+    }
+  }
+}
+
 /** Complete/balance a region of an tree.
  *
  * \param [in] inlist             List of quadrants to consider: should be
@@ -1491,23 +1569,21 @@ p4est_quadrant_disjoint_parent (const void *a, const void *b)
  *                                quadrant
  */
 static void
-p4est_complete_or_balance_kernel (sc_array_t * inlist,
-                                  p4est_quadrant_t * dom,
-                                  int bound,
-                                  sc_mempool_t * qpool,
-                                  sc_mempool_t * list_alloc,
-                                  sc_array_t * out,
-                                  p4est_quadrant_t * first_desc,
-                                  p4est_quadrant_t * last_desc,
-                                  size_t * count_in, size_t * count_out,
-                                  size_t * count_an)
+p4est_balance_kernel (sc_array_t * inlist,
+                      p4est_quadrant_t * dom,
+                      int bound,
+                      sc_mempool_t * qpool,
+                      sc_mempool_t * list_alloc,
+                      p4est_quadrant_t * first_desc,
+                      p4est_quadrant_t * last_desc,
+                      size_t * count_in, size_t * count_out,
+                      size_t * count_an)
 {
   int                 inserted;
   size_t              iz, jz;
   size_t              incount, ocount;
 #ifdef P4EST_ENABLE_DEBUG
   size_t              quadrant_pool_size;
-  sc_array_t          outview;
 #endif
   size_t              count_already_inlist, count_already_outlist;
   size_t              count_ancestor_inlist;
@@ -1518,11 +1594,10 @@ p4est_complete_or_balance_kernel (sc_array_t * inlist,
   int                 precluded = 2;
   int                 l;
   void              **vlookup;
-  ssize_t             srindex, si;
+  ssize_t             srindex;
   p4est_qcoord_t      ph;
   p4est_quadrant_t   *qalloc, *qlookup, **qpointer;
-  p4est_quadrant_t    par, tempq, tempp, fd, ld;
-  uint64_t            lid;
+  p4est_quadrant_t    par, tempq, tempp, fd;
   sc_array_t         *olist;
   sc_hash_t          *hash[P4EST_MAXLEVEL + 1];
   sc_array_t          outlist[P4EST_MAXLEVEL + 1];
@@ -1551,313 +1626,284 @@ p4est_complete_or_balance_kernel (sc_array_t * inlist,
   }
 
   if (first_desc != NULL) {
-    /* make sure that a quadrant at first_desc is represented in inlist */
     fd = *first_desc;
     while (fd.level > minlevel && p4est_quadrant_child_id (&fd) == 0) {
       p4est_quadrant_parent (&fd, &fd);
-    }
-    p4est_quadrant_sibling (&fd, &tempq, 0);
-    si = p4est_find_lower_bound (inlist, &tempq, 0);
-    if (si >= 0) {
-      q = p4est_quadrant_array_index (inlist, si);
-      p4est_nearest_common_ancestor (&tempq, q, &tempp);
-      if (tempp.level < tempq.level - 1) {
-        /* add tempq to inlist */
-        sc_array_resize (inlist, inlist->elem_count + 1);
-        memmove (sc_array_index (inlist, si + 1), sc_array_index (inlist, si),
-                 (incount - si) * inlist->elem_size);
-        q = p4est_quadrant_array_index (inlist, si);
-        *q = tempq;
-        q->p.user_int = 0;
-        incount++;
-      }
-    }
-    else {
-      /* add tempq to inlist */
-      q = (p4est_quadrant_t *) sc_array_push (inlist);
-      *q = tempq;
-      q->p.user_int = 0;
-      incount++;
     }
   }
   else {
     p4est_quadrant_first_descendant (dom, &fd, minlevel);
   }
 
-  if (last_desc != NULL) {
-    /* make sure that a quadrant at last_desc is represented in inlist */
-    tempq = *last_desc;
-    while (tempq.level > minlevel &&
-           p4est_quadrant_child_id (&tempq) == P4EST_CHILDREN - 1) {
-      p4est_quadrant_parent (&tempq, &tempq);
-    }
-    p4est_quadrant_sibling (&tempq, &tempp, 0);
-    si = p4est_find_higher_bound (inlist, last_desc, 0);
-    if (si >= 0) {
-      q = p4est_quadrant_array_index (inlist, si);
-      p4est_nearest_common_ancestor (last_desc, q, &tempq);
-      if (tempq.level < tempp.level - 1) {
-        /* add tempp to inlist */
-        sc_array_resize (inlist, inlist->elem_count + 1);
-        if ((size_t) si < incount - 1) {
-          memmove (sc_array_index (inlist, si + 2),
-                   sc_array_index (inlist, si + 1),
-                   (incount - (si + 1)) * inlist->elem_size);
-        }
-        q = p4est_quadrant_array_index (inlist, si + 1);
-        *q = tempp;
-        q->p.user_int = 0;
-        incount++;
-      }
-    }
-    else {
-      /* add tempp to inlist */
-      sc_array_resize (inlist, inlist->elem_count + 1);
-      memmove (sc_array_index (inlist, 1), sc_array_index (inlist, 0),
-               incount * inlist->elem_size);
-      q = p4est_quadrant_array_index (inlist, 0);
-      *q = tempp;
-      q->p.user_int = 0;
-      incount++;
-    }
-  }
-
   P4EST_ASSERT (sc_array_is_sorted (inlist, p4est_quadrant_compare));
 
-  if (bound > 1) {
-    /* initialize temporary storage */
-    for (l = 0; l <= minlevel; ++l) {
-      /* we don't need a hash table for minlevel, because all minlevel
-       * quadrants will be created automatically by filling in gaps */
-      hash[l] = NULL;
-      memset (&outlist[l], -1, sizeof (sc_array_t));
-    }
-    for (; l < maxlevel; ++l) {
-      hash[l] = sc_hash_new (p4est_quadrant_hash_fn, p4est_quadrant_equal_fn,
-                             NULL, list_alloc);
-      sc_array_init (&outlist[l], sizeof (p4est_quadrant_t *));
-    }
-    for (; l <= P4EST_MAXLEVEL; ++l) {
-      /* we don't need a hash table for maxlevel because a quad only spawns
-       * larger quads */
-      hash[l] = NULL;
-      memset (&outlist[l], -1, sizeof (sc_array_t));
-    }
-    outlist[maxlevel].elem_count = 0;
+  /* initialize temporary storage */
+  for (l = 0; l <= minlevel; ++l) {
+    /* we don't need a hash table for minlevel, because all minlevel
+     * quadrants will be created automatically by filling in gaps */
+    hash[l] = NULL;
+    memset (&outlist[l], -1, sizeof (sc_array_t));
+  }
+  for (; l < maxlevel; ++l) {
+    hash[l] = sc_hash_new (p4est_quadrant_hash_fn, p4est_quadrant_equal_fn,
+                           NULL, list_alloc);
+    sc_array_init (&outlist[l], sizeof (p4est_quadrant_t *));
+  }
+  for (; l <= P4EST_MAXLEVEL; ++l) {
+    /* we don't need a hash table for maxlevel because a quad only spawns
+     * larger quads */
+    hash[l] = NULL;
+    memset (&outlist[l], -1, sizeof (sc_array_t));
+  }
+  outlist[maxlevel].elem_count = 0;
 
-    /* walk through the input tree bottom-up */
-    ph = 0;
-    pid = -1;
-    qalloc = p4est_quadrant_mempool_alloc (qpool);
-    qalloc->p.user_int = 0;
+  /* walk through the input tree bottom-up */
+  ph = 0;
+  pid = -1;
+  qalloc = p4est_quadrant_mempool_alloc (qpool);
+  qalloc->p.user_int = 0;
 
-    /* we don't need to run for minlevel + 1, because all of the quads that
-     * would be created would be outside dom */
-    for (l = maxlevel; l > minlevel + 1; l--) {
-      ocount = outlist[l].elem_count;   /* ocount is not growing */
-      olist = &outlist[l - 1];
-      for (jz = 0; jz < incount + ocount; ++jz) {
-        if (jz < incount) {
-          q = p4est_quadrant_array_index (inlist, jz);
-          if ((int) q->level != l || (q->p.user_int & duplicate)) {
-            /* if a duplicate, don't run */
-            continue;
+  /* we don't need to run for minlevel + 1, because all of the quads that
+   * would be created would be outside dom */
+  for (l = maxlevel; l > minlevel + 1; l--) {
+    ocount = outlist[l].elem_count;   /* ocount is not growing */
+    olist = &outlist[l - 1];
+    for (jz = 0; jz < incount + ocount; ++jz) {
+      if (jz < incount) {
+        q = p4est_quadrant_array_index (inlist, jz);
+        if ((int) q->level != l || (q->p.user_int & duplicate)) {
+          /* if a duplicate, don't run */
+          continue;
+        }
+      }
+      else {
+        qpointer =
+                  (p4est_quadrant_t **) sc_array_index (&outlist[l], jz - incount);
+        q = *qpointer;
+        P4EST_ASSERT ((int) q->level == l);
+      }
+      P4EST_ASSERT (p4est_quadrant_is_ancestor (dom, q));
+      P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
+
+      p4est_quadrant_parent (q, &par);        /* get the parent */
+      ph = P4EST_QUADRANT_LEN (par.level - 1);        /* twice its size */
+      pid = p4est_quadrant_child_id (&par);   /* and position */
+      p4est_quadrant_sibling (&par, &par, 0); /* now shift to 0 */
+
+      for (sid = 0; sid < bound; sid++) {
+        *qalloc = par;
+        if (!sid) {
+          qalloc->p.user_int = precluded;
+          P4EST_ASSERT (p4est_quadrant_is_ancestor (dom, qalloc));
+        }
+        else if (sid <= P4EST_DIM) {
+          /* include face neighbors */
+          switch (sid - 1) {
+          case 0:
+            qalloc->x += ((pid & 1) ? ph : -ph);
+            break;
+          case 1:
+            qalloc->y += ((pid & 2) ? ph : -ph);
+            break;
+#ifdef P4_TO_P8
+          case 2:
+            qalloc->z += ((pid & 4) ? ph : -ph);
+            break;
+#endif
+          default:
+            SC_ABORT_NOT_REACHED ();
           }
         }
-        else {
-          qpointer =
-            (p4est_quadrant_t **) sc_array_index (&outlist[l], jz - incount);
-          q = *qpointer;
-          P4EST_ASSERT ((int) q->level == l);
-        }
-        P4EST_ASSERT (p4est_quadrant_is_ancestor (dom, q));
-        P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
-
-        p4est_quadrant_parent (q, &par);        /* get the parent */
-        ph = P4EST_QUADRANT_LEN (par.level - 1);        /* twice its size */
-        pid = p4est_quadrant_child_id (&par);   /* and position */
-        p4est_quadrant_sibling (&par, &par, 0); /* now shift to 0 */
-
-        for (sid = 0; sid < bound; sid++) {
-          *qalloc = par;
-          if (!sid) {
-            qalloc->p.user_int = precluded;
-            P4EST_ASSERT (p4est_quadrant_is_ancestor (dom, qalloc));
-          }
-          else if (sid <= P4EST_DIM) {
-            /* include face neighbors */
-            switch (sid - 1) {
-            case 0:
-              qalloc->x += ((pid & 1) ? ph : -ph);
-              break;
-            case 1:
-              qalloc->y += ((pid & 2) ? ph : -ph);
-              break;
 #ifdef P4_TO_P8
-            case 2:
-              qalloc->z += ((pid & 4) ? ph : -ph);
-              break;
-#endif
-            default:
-              SC_ABORT_NOT_REACHED ();
-            }
-          }
-#ifdef P4_TO_P8
-          else if (sid < 7) {
-            /* include edge neighbors */
-            switch (sid - 4) {
-            case 0:
-              qalloc->y += ((pid & 2) ? ph : -ph);
-              qalloc->z += ((pid & 4) ? ph : -ph);
-              break;
-            case 1:
-              qalloc->x += ((pid & 1) ? ph : -ph);
-              qalloc->z += ((pid & 4) ? ph : -ph);
-              break;
-            case 2:
-              qalloc->x += ((pid & 1) ? ph : -ph);
-              qalloc->y += ((pid & 2) ? ph : -ph);
-              break;
-            default:
-              SC_ABORT_NOT_REACHED ();
-            }
-          }
-#endif
-          else {
-            /* include corner neighbor */
+        else if (sid < 7) {
+          /* include edge neighbors */
+          switch (sid - 4) {
+          case 0:
+            qalloc->y += ((pid & 2) ? ph : -ph);
+            qalloc->z += ((pid & 4) ? ph : -ph);
+            break;
+          case 1:
+            qalloc->x += ((pid & 1) ? ph : -ph);
+            qalloc->z += ((pid & 4) ? ph : -ph);
+            break;
+          case 2:
             qalloc->x += ((pid & 1) ? ph : -ph);
             qalloc->y += ((pid & 2) ? ph : -ph);
-#ifdef P4_TO_P8
-            qalloc->z += ((pid & 4) ? ph : -ph);
+            break;
+          default:
+            SC_ABORT_NOT_REACHED ();
+          }
+        }
 #endif
-          }
-
-          P4EST_ASSERT (p4est_quadrant_is_extended (qalloc));
-          P4EST_ASSERT (p4est_quadrant_child_id (qalloc) == 0);
-          P4EST_ASSERT (!sid || qalloc->p.user_int == 0);
-          P4EST_ASSERT (qalloc->level == l - 1);
-
-          /* do not add quadrants outside of the domain */
-          if (sid && !p4est_quadrant_is_ancestor (dom, qalloc)) {
-            continue;
-          }
-
-          /* make sure that qalloc is not included more than once */
-          inserted = sc_hash_insert_unique (hash[l - 1], qalloc, &vlookup);
-          if (!inserted) {
-            /* qalloc is already included in output list, this catches most */
-            ++count_already_outlist;
-            if (!sid) {
-              /* we need to relay the fact that this octant is precluded */
-              qlookup = (p4est_quadrant_t *) * vlookup;
-              qlookup->p.user_int = precluded;
-            }
-            continue;
-          }
-
-          if (sid) {
-            /* we do not need to search if we are adding the parent sibling: we
-             * already know that the octant is precluded, and any other octant
-             * we might find should already be marked duplicate */
-            srindex = sc_array_bsearch (inlist, qalloc,
-                                        p4est_quadrant_disjoint_parent);
-
-            if (srindex != -1) {
-              r = p4est_quadrant_array_index (inlist, srindex);
-
-              if (r->level >= l - 1) {
-                /* either qalloc duplicates r or is precluded by r: either way,
-                 * we do not need to add qalloc to inlist in the final merge */
-                qalloc->p.user_int = precluded;
-                if (r->level > l - 1) {
-                  ++count_ancestor_inlist;
-                }
-                else {
-                  ++count_already_inlist;
-                }
-              }
-              if (r->level <= l - 1) {
-                /* either qalloc duplicates r, or an octant that can be traced to
-                 * qalloc will duplicate r */
-                r->p.user_int |= duplicate;
-                if (r->level < l - 1) {
-                  /* if qalloc precluded r, we can remove r before the final
-                   * merge */
-                  r->p.user_int |= precluded;
-                }
-              }
-            }
-          }
-
-          qpointer = (p4est_quadrant_t **) sc_array_push (olist);
-          *qpointer = qalloc;
-          /* we need a new quadrant now, the old one is stored away */
-          qalloc = p4est_quadrant_mempool_alloc (qpool);
-          qalloc->p.user_int = 0;
-        }
-      }
-    }
-    sc_mempool_free (qpool, qalloc);
-
-    /* remove unneeded octants */
-    jz = 0;
-    for (iz = 0; iz < incount; iz++) {
-      q = p4est_quadrant_array_index (inlist, iz);
-      if ((q->p.user_int & precluded) == 0) {
-        if (jz != iz) {
-          p = p4est_quadrant_array_index (inlist, jz++);
-          *p = *q;
-        }
         else {
-          jz++;
-        }
-      }
-    }
-    sc_array_resize (inlist, jz);
-    incount = jz;
-
-    for (l = minlevel + 1; l < maxlevel; ++l) {
-      /* print statistics and free hash tables */
-#ifdef P4EST_ENABLE_DEBUG
-      sc_hash_print_statistics (p4est_package_id, SC_LP_DEBUG, hash[l]);
+          /* include corner neighbor */
+          qalloc->x += ((pid & 1) ? ph : -ph);
+          qalloc->y += ((pid & 2) ? ph : -ph);
+#ifdef P4_TO_P8
+          qalloc->z += ((pid & 4) ? ph : -ph);
 #endif
-      sc_hash_unlink_destroy (hash[l]);
+        }
 
-      /* merge valid quadrants from outlist into inlist */
-      ocount = outlist[l].elem_count;
-      q = NULL;
-      for (jz = 0; jz < ocount; ++jz) {
-        /* go through output list */
-        qpointer = (p4est_quadrant_t **) sc_array_index (&outlist[l], jz);
-        qalloc = *qpointer;
-        P4EST_ASSERT ((int) qalloc->level == l);
-        P4EST_ASSERT (p4est_quadrant_is_ancestor (dom, qalloc));
+        P4EST_ASSERT (p4est_quadrant_is_extended (qalloc));
         P4EST_ASSERT (p4est_quadrant_child_id (qalloc) == 0);
-        /* copy temporary quadrant into inlist */
-        if (first_desc != NULL && p4est_quadrant_compare (qalloc, &fd) < 0) {
-          sc_mempool_free (qpool, qalloc);
-          continue;
-        }
-        if (last_desc != NULL
-            && p4est_quadrant_compare (qalloc, last_desc) > 0) {
-          sc_mempool_free (qpool, qalloc);
-          continue;
-        }
-        if (qalloc->p.user_int != precluded) {
-          q = p4est_quadrant_array_push (inlist);
-          *q = *qalloc;
-        }
-        sc_mempool_free (qpool, qalloc);
-      }
-      sc_array_reset (&outlist[l]);
-    }
-    P4EST_ASSERT (quadrant_pool_size == qpool->elem_count);
-    sc_mempool_truncate (list_alloc);
+        P4EST_ASSERT (!sid || qalloc->p.user_int == 0);
+        P4EST_ASSERT (qalloc->level == l - 1);
 
-    /* sort inlist */
-    if (inlist->elem_count > incount) {
-      sc_array_sort (inlist, p4est_quadrant_compare);
+        /* do not add quadrants outside of the domain */
+        if (sid && !p4est_quadrant_is_ancestor (dom, qalloc)) {
+          continue;
+        }
+
+        /* make sure that qalloc is not included more than once */
+        inserted = sc_hash_insert_unique (hash[l - 1], qalloc, &vlookup);
+        if (!inserted) {
+          /* qalloc is already included in output list, this catches most */
+          ++count_already_outlist;
+          if (!sid) {
+            /* we need to relay the fact that this octant is precluded */
+            qlookup = (p4est_quadrant_t *) * vlookup;
+            qlookup->p.user_int = precluded;
+          }
+          continue;
+        }
+
+        if (sid) {
+          /* we do not need to search if we are adding the parent sibling: we
+           * already know that the octant is precluded, and any other octant
+           * we might find should already be marked duplicate */
+          srindex = sc_array_bsearch (inlist, qalloc,
+                                      p4est_quadrant_disjoint_parent);
+
+          if (srindex != -1) {
+            r = p4est_quadrant_array_index (inlist, srindex);
+
+            if (r->level >= l - 1) {
+              /* either qalloc duplicates r or is precluded by r: either way,
+               * we do not need to add qalloc to inlist in the final merge */
+              qalloc->p.user_int = precluded;
+              if (r->level > l - 1) {
+                ++count_ancestor_inlist;
+              }
+              else {
+                ++count_already_inlist;
+              }
+            }
+            if (r->level <= l - 1) {
+              /* either qalloc duplicates r, or an octant that can be traced to
+               * qalloc will duplicate r */
+              r->p.user_int |= duplicate;
+              if (r->level < l - 1) {
+                /* if qalloc precluded r, we can remove r before the final
+                 * merge */
+                r->p.user_int |= precluded;
+              }
+            }
+          }
+        }
+
+        qpointer = (p4est_quadrant_t **) sc_array_push (olist);
+        *qpointer = qalloc;
+        /* we need a new quadrant now, the old one is stored away */
+        qalloc = p4est_quadrant_mempool_alloc (qpool);
+        qalloc->p.user_int = 0;
+      }
     }
+  }
+  sc_mempool_free (qpool, qalloc);
+
+  /* remove unneeded octants */
+  jz = 0;
+  for (iz = 0; iz < incount; iz++) {
+    q = p4est_quadrant_array_index (inlist, iz);
+    if ((q->p.user_int & precluded) == 0) {
+      if (jz != iz) {
+        p = p4est_quadrant_array_index (inlist, jz++);
+        *p = *q;
+      }
+      else {
+        jz++;
+      }
+    }
+  }
+  inlist->elem_count = incount = jz;
+
+  for (l = minlevel + 1; l < maxlevel; ++l) {
+    /* print statistics and free hash tables */
+#ifdef P4EST_ENABLE_DEBUG
+    sc_hash_print_statistics (p4est_package_id, SC_LP_DEBUG, hash[l]);
+#endif
+    sc_hash_unlink_destroy (hash[l]);
+
+    /* merge valid quadrants from outlist into inlist */
+    ocount = outlist[l].elem_count;
+    q = NULL;
+    for (jz = 0; jz < ocount; ++jz) {
+      /* go through output list */
+      qpointer = (p4est_quadrant_t **) sc_array_index (&outlist[l], jz);
+      qalloc = *qpointer;
+      P4EST_ASSERT ((int) qalloc->level == l);
+      P4EST_ASSERT (p4est_quadrant_is_ancestor (dom, qalloc));
+      P4EST_ASSERT (p4est_quadrant_child_id (qalloc) == 0);
+      /* copy temporary quadrant into inlist */
+      if (first_desc != NULL && p4est_quadrant_compare (qalloc, &fd) < 0) {
+        sc_mempool_free (qpool, qalloc);
+        continue;
+      }
+      if (last_desc != NULL
+          && p4est_quadrant_compare (qalloc, last_desc) > 0) {
+        sc_mempool_free (qpool, qalloc);
+        continue;
+      }
+      if (qalloc->p.user_int != precluded) {
+        q = p4est_quadrant_array_push (inlist);
+        *q = *qalloc;
+      }
+      sc_mempool_free (qpool, qalloc);
+    }
+    sc_array_reset (&outlist[l]);
+  }
+  P4EST_ASSERT (quadrant_pool_size == qpool->elem_count);
+  sc_mempool_truncate (list_alloc);
+
+  /* sort inlist */
+  if (inlist->elem_count > incount) {
+    sc_array_sort (inlist, p4est_quadrant_compare);
+  }
+
+  if (count_in != NULL) {
+    *count_in += count_already_inlist;
+  }
+  if (count_out != NULL) {
+    *count_out += count_already_outlist;
+  }
+  if (count_an != NULL) {
+    *count_an += count_ancestor_inlist;
+  }
+
+}
+
+static void
+p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant_t *first_desc, p4est_quadrant_t *last_desc,
+                       sc_array_t *out)
+{
+  int minlevel = dom->level + 1;
+  size_t ocount, incount, jz;
+  p4est_quadrant_t fd, ld, tempq, tempp;
+  ssize_t si;
+  p4est_quadrant_t *q, *r;
+  int pid;
+  uint64_t lid;
+
+  incount = inlist->elem_count;
+
+  if (first_desc != NULL) {
+    fd = *first_desc;
+    while (fd.level > minlevel && p4est_quadrant_child_id (&fd) == 0) {
+      p4est_quadrant_parent (&fd, &fd);
+    }
+  }
+  else {
+    p4est_quadrant_first_descendant (dom, &fd, minlevel);
   }
 
   /* step through inlist and fill in the gaps in out */
@@ -1992,27 +2038,20 @@ p4est_complete_or_balance_kernel (sc_array_t * inlist,
   }
 
 #ifdef P4EST_ENABLE_DEBUG
-  sc_array_init_view (&outview, out, ocount, out->elem_count - ocount);
-  P4EST_ASSERT (sc_array_is_sorted (&outview, p4est_quadrant_compare));
-  P4EST_ASSERT (outview.elem_count > 1);
+  {
+    sc_array_t outview;
 
-  for (jz = 0; jz < outview.elem_count - 1; jz++) {
-    q = p4est_quadrant_array_index (&outview, jz);
-    r = p4est_quadrant_array_index (&outview, jz + 1);
-    P4EST_ASSERT (p4est_quadrant_is_next (q, r));
+    sc_array_init_view (&outview, out, ocount, out->elem_count - ocount);
+    P4EST_ASSERT (sc_array_is_sorted (&outview, p4est_quadrant_compare));
+    P4EST_ASSERT (outview.elem_count > 1);
+
+    for (jz = 0; jz < outview.elem_count - 1; jz++) {
+      q = p4est_quadrant_array_index (&outview, jz);
+      r = p4est_quadrant_array_index (&outview, jz + 1);
+      P4EST_ASSERT (p4est_quadrant_is_next (q, r));
+    }
   }
 #endif
-
-  if (count_in != NULL) {
-    *count_in += count_already_inlist;
-  }
-  if (count_out != NULL) {
-    *count_out += count_already_outlist;
-  }
-  if (count_an != NULL) {
-    *count_an += count_ancestor_inlist;
-  }
-
 }
 
 static void
@@ -2063,6 +2102,72 @@ p4est_balance_replace_recursive (p4est_t * p4est, p4est_topidx_t nt,
                                        start + iz[jz + 1], famp[jz],
                                        init_fn, replace_fn);
     }
+  }
+}
+
+static void
+p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, p4est_quadrant_t *root, const int8_t * pre_adapt_flags)
+{
+  p4est_quadrant_t *q, *p, tempq;
+  size_t iz, tcount = tquadrants->elem_count;
+  int rootlevel = root ? root->level : 0;
+
+  /* get the reduced representation of the tree */
+  q = (p4est_quadrant_t *) sc_array_push (inlist);
+  p = p4est_quadrant_array_index (tquadrants, 0);
+  if (!pre_adapt_flags || pre_adapt_flags[0] == P4EST_FUSED_KEEP) {
+    p4est_quadrant_sibling (p, q, 0);
+  }
+  /* if the quadrant is marked for pre-refinement, add its first child to the
+   * stack */
+  else if (pre_adapt_flags[0] == P4EST_FUSED_REFINE) {
+    if (p->level < P4EST_QMAXLEVEL) {
+      p4est_quadrant_child (p, q, 0);
+    }
+    else {
+      p4est_quadrant_sibling (p, q, 0);
+    }
+  }
+  /* if the quadrant is marked for pre-coarsening, add its parent to the
+   * stack */
+  else {
+    if (p->level > 0) {
+      p4est_quadrant_t    r;
+
+      p4est_quadrant_parent (p, &r);
+      p4est_quadrant_sibling (&r, q, 0);
+    }
+    else {
+      p4est_quadrant_sibling (p, q, 0);
+    }
+  }
+  for (iz = 1; iz < tcount; iz++) {
+    p4est_quadrant_t    tempp;
+
+    p = p4est_quadrant_array_index (tquadrants, iz);
+    if (pre_adapt_flags && pre_adapt_flags[iz] != P4EST_FUSED_KEEP) {
+      if (pre_adapt_flags[iz] == P4EST_FUSED_REFINE) {
+        if (p->level < P4EST_QMAXLEVEL) {
+          p4est_quadrant_child (p, &tempp, 0);
+          p = &tempp;
+        }
+      }
+      else {
+        if (p->level > rootlevel + 1) {
+          p4est_quadrant_parent (p, &tempp);
+          p = &tempp;
+        }
+      }
+    }
+    p4est_nearest_common_ancestor (p, q, &tempq);
+    if (tempq.level >= SC_MIN (q->level, p->level) - 1) {
+      if (p->level > q->level) {
+        p4est_quadrant_sibling (p, q, 0);
+      }
+      continue;
+    }
+    q = (p4est_quadrant_t *) sc_array_push (inlist);
+    p4est_quadrant_sibling (p, q, 0);
   }
 }
 
@@ -2155,73 +2260,24 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
   inlist = sc_array_new (sizeof (p4est_quadrant_t));
   outlist = sc_array_new (sizeof (p4est_quadrant_t));
 
-  /* get the reduced representation of the tree */
-  q = (p4est_quadrant_t *) sc_array_push (inlist);
-  p = p4est_quadrant_array_index (tquadrants, 0);
-  if (!pre_adapt_flags || pre_adapt_flags[0] == P4EST_FUSED_KEEP) {
-    p4est_quadrant_sibling (p, q, 0);
-  }
-  /* if the quadrant is marked for pre-refinement, add its first child to the
-   * stack */
-  else if (pre_adapt_flags[0] == P4EST_FUSED_REFINE) {
-    if (p->level < P4EST_QMAXLEVEL) {
-      p4est_quadrant_child (p, q, 0);
-    }
-    else {
-      p4est_quadrant_sibling (p, q, 0);
-    }
-  }
-  /* if the quadrant is marked for pre-coarsening, add its parent to the
-   * stack */
-  else {
-    if (p->level > 0) {
-      p4est_quadrant_t    r;
+  /* reduce */
+  p4est_quadrant_array_reduce (tquadrants, inlist, &root, pre_adapt_flags);
 
-      p4est_quadrant_parent (p, &r);
-      p4est_quadrant_sibling (&r, q, 0);
-    }
-    else {
-      p4est_quadrant_sibling (p, q, 0);
-    }
-  }
-  for (iz = 1; iz < tcount; iz++) {
-    p4est_quadrant_t    tempp;
+  p4est_quadrant_array_insert_endpoints (inlist, &root, &(tree->first_desc), &(tree->last_desc));
 
-    p = p4est_quadrant_array_index (tquadrants, iz);
-    P4EST_ASSERT (p4est_quadrant_is_ancestor (&root, p));
-    if (pre_adapt_flags && pre_adapt_flags[iz] != P4EST_FUSED_KEEP) {
-      if (pre_adapt_flags[iz] == P4EST_FUSED_REFINE) {
-        if (p->level < P4EST_QMAXLEVEL) {
-          p4est_quadrant_child (p, &tempp, 0);
-          p = &tempp;
-        }
-      }
-      else {
-        if (p->level > root.level + 1) {
-          p4est_quadrant_parent (p, &tempp);
-          p = &tempp;
-        }
-      }
-    }
-    p4est_nearest_common_ancestor (p, q, &tempq);
-    if (tempq.level >= SC_MIN (q->level, p->level) - 1) {
-      if (p->level > q->level) {
-        p4est_quadrant_sibling (p, q, 0);
-      }
-      continue;
-    }
-    q = (p4est_quadrant_t *) sc_array_push (inlist);
-    p4est_quadrant_sibling (p, q, 0);
+  if (bound > 1) {
+    /* balance */
+    p4est_balance_kernel (inlist, &root, bound, qpool,
+                          list_alloc,
+                          &(tree->first_desc),
+                          &(tree->last_desc),
+                          &count_already_inlist,
+                          &count_already_outlist,
+                          &count_ancestor_inlist);
   }
 
-  /* balance */
-  p4est_complete_or_balance_kernel (inlist, &root, bound, qpool,
-                                    list_alloc, outlist,
-                                    &(tree->first_desc),
-                                    &(tree->last_desc),
-                                    &count_already_inlist,
-                                    &count_already_outlist,
-                                    &count_ancestor_inlist);
+  /* complete */
+  p4est_complete_kernel (inlist, &root, &(tree->first_desc), &(tree->last_desc), outlist);
 
   ocount = outlist->elem_count;
 
@@ -2543,11 +2599,12 @@ p4est_balance_border (p4est_t * p4est, p4est_connect_type_t btype,
     fcount = flist->elem_count;
 
     /* balance them within the containing quad */
-    p4est_complete_or_balance_kernel (inlist, p, bound, qpool, list_alloc,
-                                      flist, NULL, NULL,
-                                      &count_already_inlist,
-                                      &count_already_outlist,
-                                      &count_ancestor_inlist);
+    p4est_balance_kernel (inlist, p, bound, qpool, list_alloc,
+                          NULL, NULL,
+                          &count_already_inlist,
+                          &count_already_outlist,
+                          &count_ancestor_inlist);
+    p4est_complete_kernel (inlist, p, NULL, NULL, flist);
 
     /* count the amount we've added (-1 because we subtract p) */
     num_this_added = flist->elem_count - 1 - fcount;
