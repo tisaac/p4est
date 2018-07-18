@@ -382,11 +382,11 @@ void                p4est_ghost_exchange_custom_levels_end
 void                p4est_ghost_expand (p4est_t * p4est,
                                         p4est_ghost_t * ghost);
 
-/** Check whether the copy of ghost layer is equal to the original ghost layer. 
- *  Returns 1 if true, 0 else.
- *  \param [in]		ghost Original ghost layer
- *	\param [in]		copy  Ghost layer created on copied forest
- *	\return			true if two ghost layers are equal
+/** Check whether the copy of ghost layer is equal to the original ghost layer.
+ * Returns 1 if true, 0 else.
+ * \param [in] ghost            Original ghost layer
+ * \param [in] copy             Ghost layer created on copied forest
+ * \return                      true if two ghost layers are equal
  */
 int                 p4est_ghost_is_equal (p4est_ghost_t * ghost,
                                           p4est_ghost_t * copy);
