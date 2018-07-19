@@ -57,6 +57,9 @@ SC_EXTERN_C_BEGIN;
 /* size of face transformation encoding */
 #define P4EST_FTRANSFORM 9
 
+/* size of the universal transform encoding */
+#define P4EST_UTRANSFORM 9
+
 /** p4est identification string */
 #define P4EST_STRING "p4est"
 
@@ -480,6 +483,22 @@ p4est_topidx_t      p4est_find_face_transform (p4est_connectivity_t *
                                                p4est_topidx_t itree,
                                                int iface, int ftransform[]);
 
+/** Fill an array with a rectilinear description of a face transform.
+ * The rectilinear description can be used to describe corner transforms as well,
+ * making it a "universal" tranform for p4est coordinates (see
+ * p4est_quadrant_utransform ()).
+ *
+ * \param[in] ftransform   The array of 9 integers created by
+ *                         p4est_find_face_transform ().
+ * \param[out] utransform  This array holds 9 integers.
+ *             [0,2]       The coordinate axes permutation
+ *             [3,5]       The coordinate axes scalings (only +1 and -1 used)
+ *             [6,8]       The coordinate shift (in multiples of the root
+ *                         length)
+ */
+void                p4est_face_transform_to_utransform (int ftransform[],
+                                                        int utransform[]);
+
 /** Fills an array with information about corner neighbors.
  * \param [in] itree    The number of the originating tree.
  * \param [in] icorner  The number of the originating corner.
@@ -490,6 +509,24 @@ void                p4est_find_corner_transform (p4est_connectivity_t *
                                                  p4est_topidx_t itree,
                                                  int icorner,
                                                  p4est_corner_info_t * ci);
+
+/** Fill an array with a rectilinear description of a corner transform.
+ * The rectilinear description can be used to describe face transforms as well,
+ * making it a "universal" tranform for p4est coordinates (see
+ * p4est_quadrant_utransform ()).
+ *
+ * \param[in] ct           A corner transform created by
+ *                         p4est_find_corner_transform ().
+ * \param[in] icorner      The input corner
+ * \param[out] utransform  This array holds 9 integers.
+ *             [0,2]       The coordinate axes permutation
+ *             [3,5]       The coordinate axes scalings (only +1 and -1 used)
+ *             [6,8]       The coordinate shift (in multiples of the root
+ *                         length)
+ */
+void               
+p4est_corner_transform_to_utransform (p4est_corner_transform_t * ct,
+                                      int icorner, int utransform[]);
 
 /** Internally connect a connectivity based on tree_to_vertex information.
  * Periodicity that is not inherent in the list of vertices will be lost.

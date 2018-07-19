@@ -2562,6 +2562,51 @@ p8est_conn_edge_key (p4est_topidx_t * key, p4est_topidx_t * ttv, int edge)
 
 #endif /* P4_TO_P8 */
 
+void
+p4est_face_transform_to_utransform (int ftransform[], int utransform[])
+{
+  const int          *my_axis = &ftransform[0];
+  const int          *target_axis = &ftransform[3];
+  const int          *edge_reverse = &ftransform[6];
+
+  utransform[target_axis[0]] = my_axis[0];
+  utransform[target_axis[2]] = my_axis[2];
+#ifdef P4_TO_P8
+  utransform[target_axis[1]] = my_axis[1];
+#else
+  utransform[2] = 2;
+#endif
+  utransform[3 + target_axis[0]] = edge_reverse[0] ? -1 : 1;
+  utransform[6 + target_axis[0]] = edge_reverse[0] ? 1 : 0;
+#ifdef P4_TO_P8
+  utransform[3 + target_axis[1]] = edge_reverse[1] ? -1 : 1;
+  utransform[6 + target_axis[1]] = edge_reverse[1] ? 1 : 0;
+#else
+  utransform[5] = 1;
+  utransform[8] = 0;
+#endif
+  switch (edge_reverse[2]) {
+  case 0:
+    utransform[3 + target_axis[2]] = -1;
+    utransform[6 + target_axis[2]] = 0;
+    break;
+  case 1:
+    utransform[3 + target_axis[2]] = 1;
+    utransform[6 + target_axis[2]] = 1;
+    break;
+  case 2:
+    utransform[3 + target_axis[2]] = 1;
+    utransform[6 + target_axis[2]] = -1;
+    break;
+  case 3:
+    utransform[3 + target_axis[2]] = -1;
+    utransform[6 + target_axis[2]] = 2;
+    break;
+  default:
+    SC_ABORT_NOT_REACHED ();
+  }
+}
+
 static void
 p4est_expand_face_transform_internal (int iface, int target_face,
                                       int orientation, int ftransform[])
@@ -2790,6 +2835,72 @@ p4est_find_corner_transform_internal (p4est_connectivity_t * conn,
   sc_array_reset (&distinct);
 
   return ndistinct;
+}
+
+void
+p4est_corner_transform_to_utransform (p4est_corner_transform_t * ct,
+                                      int icorner, int utransform[])
+{
+  int                 ncorner = ct->ncorner;
+  int                 i;
+  int                 pos = 1;
+
+  utransform[0] = 0;
+  utransform[1] = 1;
+  utransform[2] = 2;
+  utransform[3] = utransform[4] = utransform[5] = 1;
+  utransform[6] = utransform[7] = utransform[8] = 0;
+  for (i = 0; i < P4EST_DIM; i++) {
+    int                 ic, nc;
+
+    ic = (icorner & (1 << i)) >> i;
+    nc = (ncorner & (1 << i)) >> i;
+    if (ic == nc) {
+      utransform[3 + i] = -1;
+      utransform[6 + i] = 2 * ic;
+      pos = !pos;
+    }
+    else {
+      utransform[6 + i] = nc - ic;
+    }
+  }
+  if (!pos) {
+    int                 temp;
+#ifndef P4_TO_P8
+    for (i = 0; i < 3; i++) {
+      temp = utransform[3 * i + 0];
+      utransform[3 * i + 0] = utransform[3 * i + 1];
+      utransform[3 * i + 1] = temp;
+    }
+
+    if (ncorner == 1 || ncorner == 2) {
+      utransform[3] = -utransform[3];
+      utransform[4] = -utransform[4];
+      utransform[6] = 1 - utransform[6];
+      utransform[7] = 1 - utransform[7];
+    }
+#else
+    for (i = 0; i < 3; i++) {
+      int                 j = (i + 1) % 3;
+      int                 k = (i + 2) % 3;
+      int                 ncj = (ncorner & (1 << j)) >> j;
+      int                 nck = (ncorner & (1 << k)) >> k;
+
+      if (ncj == nck) {
+        /* swap axis j and k */
+        int                 l;
+
+        for (l = 0; l < 3; l++) {
+          temp = utransform[3 * l + j];
+          utransform[3 * l + j] = utransform[3 * l + k];
+          utransform[3 * l + k] = temp;
+        }
+        break;
+      }
+    }
+    P4EST_ASSERT (i < 3);
+#endif
+  }
 }
 
 void

@@ -1442,6 +1442,69 @@ p4est_nearest_common_ancestor_D (const p4est_quadrant_t * q1,
 }
 
 void
+p4est_quadrant_utransform (const p4est_quadrant_t * q,
+                           p4est_quadrant_t * r,
+                           const int utransform[], int reverse)
+{
+  int                 i, j;
+  p4est_qcoord_t      h;
+  p4est_qcoord_t      c[2][3];
+  p4est_qcoord_t      f[2][3];
+
+  if (q->level == P4EST_MAXLEVEL) {
+    P4EST_ASSERT (p4est_quadrant_is_node (q, 0));
+  }
+  else {
+    P4EST_ASSERT (p4est_quadrant_is_extended (q));
+  }
+  h = P4EST_QUADRANT_LEN (q->level);
+  P4EST_ASSERT (q != r);
+  c[0][0] = q->x;
+  c[1][0] = q->x + h;
+  c[0][1] = q->y;
+  c[1][1] = q->y + h;
+#ifdef P4_TO_P8
+  c[0][2] = q->z;
+  c[1][2] = q->z + h;
+#endif
+  if (!reverse) {
+    for (i = 0; i < 2; i++) {
+      for (j = 0; j < 3; j++) {
+        f[i][j] = utransform[6 + j] * P4EST_ROOT_LEN;
+      }
+      for (j = 0; j < 3; j++) {
+        f[i][j] += utransform[3 + j] * c[i][utransform[j]];
+      }
+    }
+  }
+  else {
+    for (i = 0; i < 2; i++) {
+      for (j = 0; j < 3; j++) {
+        c[i][j] -= utransform[6 + j] * P4EST_ROOT_LEN;
+        f[i][j] = 0;
+      }
+      for (j = 0; j < 3; j++) {
+        f[i][utransform[j]] += utransform[3 + j] * c[i][j];
+      }
+    }
+  }
+  r->x = SC_MIN (f[0][0], f[1][0]);
+  r->y = SC_MIN (f[0][1], f[1][1]);
+#ifdef P4_TO_P8
+  r->z = SC_MIN (f[0][2], f[1][2]);
+#endif
+  r->level = q->level;
+#ifdef P4EST_ENABLE_DEBUG
+  if (r->level == P4EST_MAXLEVEL) {
+    P4EST_ASSERT (p4est_quadrant_is_node (r, 0));
+  }
+  else {
+    P4EST_ASSERT (p4est_quadrant_is_extended (r));
+  }
+#endif
+}
+
+void
 p4est_quadrant_transform_face (const p4est_quadrant_t * q,
                                p4est_quadrant_t * r, const int ftransform[])
 {

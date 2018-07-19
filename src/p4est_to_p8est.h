@@ -154,6 +154,8 @@
 #define p4est_connectivity_complete     p8est_connectivity_complete
 #define p4est_connectivity_reduce       p8est_connectivity_reduce
 #define p4est_expand_face_transform     p8est_expand_face_transform
+#define p4est_face_transform_to_utransform p8est_face_transform_to_utransform
+#define p4est_corner_transform_to_utransform p8est_corner_transform_to_utransform
 #define p4est_find_face_transform       p8est_find_face_transform
 #define p4est_find_corner_transform     p8est_find_corner_transform
 #define p4est_corner_array_index        p8est_corner_array_index
@@ -277,6 +279,7 @@
 #define p4est_quadrant_corner_descendant p8est_quadrant_corner_descendant
 #define p4est_nearest_common_ancestor   p8est_nearest_common_ancestor
 #define p4est_nearest_common_ancestor_D p8est_nearest_common_ancestor_D
+#define p4est_quadrant_utransform       p8est_quadrant_utransform
 #define p4est_quadrant_transform_face   p8est_quadrant_transform_face
 #define p4est_quadrant_touches_corner   p8est_quadrant_touches_corner
 #define p4est_quadrant_transform_corner p8est_quadrant_transform_corner

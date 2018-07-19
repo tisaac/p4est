@@ -1136,6 +1136,63 @@ p8est_connectivity_edge_neighbor_corner (int c, int e, int ne, int o)
 }
 
 void
+p8est_edge_transform_to_utransform (p8est_edge_transform_t * et,
+                                    int iedge, int utransform[])
+{
+  int                 nedge = et->nedge;
+  int                 iaxis = iedge / 4;
+  int                 naxis = nedge / 4;
+  int                 icorner = iedge % 4;
+  int                 ncorner = nedge % 4;
+  int                 i, temp;
+  int                 pos = 1;
+  int                 naxes[2];
+
+  utransform[naxis] = iaxis;
+  naxes[0] = SC_MIN ((naxis + 1) % 3, (naxis + 2) % 3);
+  naxes[1] = SC_MAX ((naxis + 1) % 3, (naxis + 2) % 3);
+  utransform[(naxis + 1) % 3] = (iaxis + 1) % 3;
+  utransform[(naxis + 2) % 3] = (iaxis + 2) % 3;
+  utransform[3] = utransform[4] = utransform[5] = 1;
+  utransform[6] = utransform[7] = utransform[8] = 0;
+  if (et->nflip) {
+    utransform[3 + naxis] = -1;
+    utransform[6 + naxis] = 1;
+    pos = !pos;
+  }
+  if (utransform[naxes[0]] > utransform[naxes[1]]) {
+    icorner = (icorner >> 1) + ((icorner & 1) << 1);
+  }
+  for (i = 0; i < 2; i++) {
+    int                 ic = (icorner & (1 << i)) >> i;
+    int                 nc = (ncorner & (1 << i)) >> i;
+
+    if (nc == ic) {
+      utransform[3 + naxes[i]] = -1;
+      utransform[6 + naxes[i]] = 2 * ic;
+      pos = !pos;
+    }
+    else {
+      utransform[6 + naxes[i]] = nc - ic;
+    }
+  }
+  if (!pos) {
+    for (i = 0; i < 3; i++) {
+      temp = utransform[3 * i + naxes[0]];
+      utransform[3 * i + naxes[0]] = utransform[3 * i + naxes[1]];
+      utransform[3 * i + naxes[1]] = temp;
+    }
+
+    if (ncorner == 1 || ncorner == 2) {
+      utransform[3 + naxes[0]] = -utransform[3 + naxes[0]];
+      utransform[3 + naxes[1]] = -utransform[3 + naxes[1]];
+      utransform[6 + naxes[0]] = 1 - utransform[6 + naxes[0]];
+      utransform[6 + naxes[1]] = 1 - utransform[6 + naxes[1]];
+    }
+  }
+}
+
+void
 p8est_find_edge_transform (p4est_connectivity_t * conn,
                            p4est_topidx_t itree, int iedge,
                            p8est_edge_info_t * ei)

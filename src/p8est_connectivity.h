@@ -58,6 +58,9 @@ SC_EXTERN_C_BEGIN;
 /* size of face transformation encoding */
 #define P8EST_FTRANSFORM 9
 
+/* size of the universal transform encoding */
+#define P4EST_UTRANSFORM 9
+
 /** p8est identification string */
 #define P8EST_STRING "p8est"
 
@@ -650,6 +653,22 @@ p4est_topidx_t      p8est_find_face_transform (p8est_connectivity_t *
                                                p4est_topidx_t itree,
                                                int iface, int ftransform[]);
 
+/** Fill an array with a rectilinear description of a face transform.
+ * The rectilinear description can be used to describe corner and edge transforms as well,
+ * making it a "universal" tranform for p4est coordinates (see
+ * p8est_quadrant_utransform ()).
+ *
+ * \param[in] ftransform   The array of 9 integers created by
+ *                         p8est_find_face_transform ().
+ * \param[out] utransform  This array holds 9 integers.
+ *             [0,2]       The coordinate axes permutation
+ *             [3,5]       The coordinate axes scalings (only +1 and -1 used)
+ *             [6,8]       The coordinate shift (in multiples of the root
+ *                         length)
+ */
+void                p8est_face_transform_to_utransform (int ftransform[],
+                                                        int utransform[]);
+
 /** Fills an array with information about edge neighbors.
  * \param [in] itree    The number of the originating tree.
  * \param [in] iedge    The number of the originating edge.
@@ -661,6 +680,24 @@ void                p8est_find_edge_transform (p8est_connectivity_t *
                                                int iedge,
                                                p8est_edge_info_t * ei);
 
+/** Fill an array with a rectilinear description of a edge transform.
+ * The rectilinear description can be used to describe face and corner transforms as well,
+ * making it a "universal" tranform for p4est coordinates (see
+ * p8est_quadrant_utransform ()).
+ *
+ * \param[in] et           An edge transform created by
+ *                         p8est_find_edge_transform ().
+ * \param[in] iedge        The input edge
+ * \param[out] utransform  This array holds 9 integers.
+ *             [0,2]       The coordinate axes permutation
+ *             [3,5]       The coordinate axes scalings (only +1 and -1 used)
+ *             [6,8]       The coordinate shift (in multiples of the root
+ *                         length)
+ */
+void                p8est_edge_transform_to_utransform (p8est_edge_transform_t
+                                                        * et, int iedge,
+                                                        int utransform[]);
+
 /** Fills an array with information about corner neighbors.
  * \param [in] itree    The number of the originating tree.
  * \param [in] icorner  The number of the originating corner.
@@ -671,6 +708,24 @@ void                p8est_find_corner_transform (p8est_connectivity_t *
                                                  p4est_topidx_t itree,
                                                  int icorner,
                                                  p8est_corner_info_t * ci);
+
+/** Fill an array with a rectilinear description of a corner transform.
+ * The rectilinear description can be used to describe face and edge transforms as well,
+ * making it a "universal" tranform for p4est coordinates (see
+ * p8est_quadrant_utransform ()).
+ *
+ * \param[in] ct           A corner transform created by
+ *                         p8est_find_corner_transform ().
+ * \param[in] icorner      The input corner
+ * \param[out] utransform  This array holds 9 integers.
+ *             [0,2]       The coordinate axes permutation
+ *             [3,5]       The coordinate axes scalings (only +1 and -1 used)
+ *             [6,8]       The coordinate shift (in multiples of the root
+ *                         length)
+ */
+void               
+p8est_corner_transform_to_utransform (p8est_corner_transform_t * ct,
+                                      int icorner, int utransform[]);
 
 /** Internally connect a connectivity based on tree_to_vertex information.
  * Periodicity that is not inherent in the list of vertices will be lost.

@@ -615,6 +615,20 @@ void                p8est_nearest_common_ancestor_D (const p8est_quadrant_t *
                                                      q2,
                                                      p8est_quadrant_t * r);
 
+/** Transform a quadrant/node by a "universal" rectilinear transform.
+ * \param [in]     q        Input quadrant/non-clamped node.
+ * \param [in,out] r        Quadrant/node whose Morton index will be filled.
+ * \param [in] utransform   This array holds 9 integers.
+ *             [0,2]        The coordinate axes permutation
+ *             [3,5]        The coordinate axes scalings (only +1 and -1 used)
+ *             [6,8]        The coordinate shift (in multiples of the root
+ *                          length)
+ */
+void                p8est_quadrant_utransform (const p8est_quadrant_t * q,
+                                               p8est_quadrant_t * r,
+                                               const int utransform[],
+                                               int reverse);
+
 /** Transforms a quadrant/node across a face between trees.
  * \param [in]     q        Input quadrant/non-clamped node.
  * \param [in,out] r        Quadrant/node whose Morton index will be filled.
