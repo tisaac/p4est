@@ -1452,8 +1452,7 @@ p4est_root_insul (p4est_quadrant_t *q)
 static void
 p4est_tree_ghost_neigh_add_r (p4est_t *p4est, p4est_topidx_t from_tree, int insul, int insul_max, p4est_topidx_t which_tree, int nlevel,
                               int32_t touch, int p_fi, int p_la, p4est_quadrant_t *fi, p4est_quadrant_t *la,
-                              int *proc_hash, sc_array_t *proc_table,
-                              sc_array_t *neigh_quads)
+                              int *proc_hash, sc_array_t *procs)
 {
   int32_t rb;
 
@@ -1467,82 +1466,12 @@ p4est_tree_ghost_neigh_add_r (p4est_t *p4est, p4est_topidx_t from_tree, int insu
     return;
   }
   if (p_fi == p_la) { /* (uniquely) add this tree's portion of the process range to the neighborhood */
-    p4est_topidx_t flt = p4est->first_local_tree;
-    p4est_topidx_t llt = p4est->last_local_tree;
-    p4est_topidx_t num_trees = llt + 1 - flt;
-    p4est_quadrant_t *bounds;
-    int idx;
-    int **p_tree;
-    int *p_insul;
+    int idx = proc_hash[p_fi];
 
-    idx = proc_hash[p_fi];
-    if (idx) {
-      p_tree = (int **) sc_array_index (proc_table, (size_t) (idx - 1));
-    }
-    else {
-      /* process has not been seen before,
-       * and a lookup table for every local tree */
-      p_tree = (int **) sc_array_push (proc_table);
-      memset (p_tree, 0, num_trees * sizeof (int *));
-
-      proc_hash[p_fi] = (int) proc_table->elem_count;
-    }
-    /* get the lookup table for this process and this tree */
-    if (!p_tree[from_tree - flt]) {
-      /* this process has not been seen by from_tree before,
-       * add a lookup table for every insulation index */
-      p_tree[from_tree - flt] = P4EST_ALLOC_ZERO (int, insul_max);
-    }
-    p_insul = p_tree[from_tree - flt];
-    /* if this process has already been seen in this from_tree and
-     * this insulation index, the range has already been added */
-    P4EST_ASSERT (0 <= insul && insul < insul_max);
-    if (p_insul[insul]) {
-      return;
-    }
-    p_insul[insul] = 1;
-
-    bounds = (p4est_quadrant_t *) sc_array_push_count (neigh_quads, 2);
-
-    /* storing insul in which_tree is more specific than which_tree,
-     * since which_tree can be recovered from it and which_tree may
-     * occur more than once */
-    bounds[0].p.piggy1.which_tree = (p4est_topidx_t) insul;
-    bounds[0].p.piggy1.owner_rank = p_fi;
-    bounds[1].p.piggy1.which_tree = (p4est_topidx_t) insul;
-    bounds[1].p.piggy1.owner_rank = p_fi;
-
-    if (p4est->global_first_position[p_fi].p.which_tree == which_tree) {
-      bounds[0].x = p4est->global_first_position[p_fi].x;
-      bounds[0].y = p4est->global_first_position[p_fi].y;
-#ifdef P4_TO_P8
-      bounds[0].z = p4est->global_first_position[p_fi].z;
-#endif
-      bounds[0].level = P4EST_QMAXLEVEL;
-    }
-    else {
-      bounds[0].x = 0;
-      bounds[0].y = 0;
-#ifdef P4_TO_P8
-      bounds[0].z = 0;
-#endif
-      bounds[0].level = P4EST_QMAXLEVEL;
-    }
-    if (p4est->global_first_position[p_fi + 1].p.which_tree == which_tree) {
-      uint64_t id;
-
-      id = p4est_quadrant_linear_id (&p4est->global_first_position[p_fi + 1], P4EST_QMAXLEVEL);
-      p4est_quadrant_set_morton (&bounds[1], P4EST_QMAXLEVEL, id - 1);
-    }
-    else {
-      p4est_qcoord_t h = P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
-
-      bounds[1].x = P4EST_ROOT_LEN - h;
-      bounds[1].y = P4EST_ROOT_LEN - h;
-#ifdef P4_TO_P8
-      bounds[1].z = P4EST_ROOT_LEN - h;
-#endif
-      bounds[1].level = P4EST_QMAXLEVEL;
+    if (!idx) {
+      /* process has not been seen before, add it */
+      *((int *) sc_array_push (procs)) = p_fi;
+      proc_hash[p_fi] = (int) procs->elem_count;
     }
     return;
   }
@@ -1557,17 +1486,15 @@ p4est_tree_ghost_neigh_add_r (p4est_t *p4est, p4est_topidx_t from_tree, int insu
     id = p4est_quadrant_linear_id (lalo, P4EST_QMAXLEVEL);
     p4est_quadrant_set_morton (&fihi, P4EST_QMAXLEVEL, id - 1);
     p4est_tree_ghost_neigh_add_r (p4est, from_tree, insul, insul_max, which_tree, nlevel,
-                                  touch, p_fi, mid - 1, fi, &fihi, proc_hash, proc_table,
-                                  neigh_quads);
+                                  touch, p_fi, mid - 1, fi, &fihi, proc_hash, procs);
     p4est_tree_ghost_neigh_add_r (p4est, from_tree, insul, insul_max, which_tree, nlevel,
-                                  touch, mid, p_la, lalo, la, proc_hash, proc_table,
-                                  neigh_quads);
+                                  touch, mid, p_la, lalo, la, proc_hash, procs);
   }
 }
 
 static void
 p4est_tree_ghost_neighborhood_add (p4est_t *p4est, int from_tree, int insul, int insul_max, p4est_topidx_t which_tree, p4est_quadrant_t *q,
-                                   p4est_quadrant_t *n, sc_array_t *neigh_quads, int *proc_hash, sc_array_t *proc_table)
+                                   p4est_quadrant_t *n, int *proc_hash, sc_array_t *procs)
 {
   p4est_qcoord_t diff[3];
   int ninsul;
@@ -1626,12 +1553,12 @@ p4est_tree_ghost_neighborhood_add (p4est_t *p4est, int from_tree, int insul, int
   if (p_fi == rank && p_la == rank) {
     return;
   }
-  p4est_tree_ghost_neigh_add_r (p4est, from_tree, insul, insul_max, which_tree, n->level, touch, p_fi, p_la, &fi, &la, proc_hash, proc_table, neigh_quads);
+  p4est_tree_ghost_neigh_add_r (p4est, from_tree, insul, insul_max, which_tree, n->level, touch, p_fi, p_la, &fi, &la, proc_hash, procs);
 }
 
 static void
 p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_quadrant_t *q,
-                                      sc_array_t *neigh_quads, p4est_tree_neigh_info_t *info, int *proc_hash, sc_array_t *proc_table)
+                                      p4est_tree_neigh_info_t *info, int *proc_hash, sc_array_t *procs)
 {
   p4est_qcoord_t h = P4EST_QUADRANT_LEN (q->level);
   int i, j, k, l, insulmax;
@@ -1648,8 +1575,7 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_qu
         p4est_quadrant_t n;
         p4est_quadrant_t nn, nq;
         int rootinsul;
-        size_t nneigh, nneighnew, s, z;
-        p4est_quadrant_t *neigh;
+        size_t s;
 
         if (l == P4EST_INSUL / 2) {
           continue;
@@ -1664,7 +1590,7 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_qu
 
         rootinsul = p4est_root_insul (&n);
         if (rootinsul == P4EST_INSUL / 2) {
-          p4est_tree_ghost_neighborhood_add (p4est, t, info->offset[rootinsul], insulmax, t, q, &n, neigh_quads, proc_hash, proc_table);
+          p4est_tree_ghost_neighborhood_add (p4est, t, info->offset[rootinsul], insulmax, t, q, &n, proc_hash, procs);
         }
         else {
           size_t offset = info->offset[rootinsul];
@@ -1675,18 +1601,7 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_qu
 
             p4est_quadrant_utransform (q, &nq, &(tn->u[0]), 0);
             p4est_quadrant_utransform (&n, &nn, &(tn->u[0]), 0);
-            nneigh = neigh_quads->elem_count;
-            p4est_tree_ghost_neighborhood_add (p4est, t, s, insulmax, tn->nt, &nq, &nn, neigh_quads, proc_hash, proc_table);
-            nneighnew = neigh_quads->elem_count - nneigh;
-            if (!nneighnew) {
-              continue;
-            }
-            neigh = p4est_quadrant_array_index (neigh_quads, nneigh);
-            for (z = 0; z < nneighnew; z++) {
-              p4est_quadrant_t temp = neigh[z];
-
-              p4est_quadrant_utransform (&temp, &neigh[z], &(tn->u[0]), 1);
-            }
+            p4est_tree_ghost_neighborhood_add (p4est, t, s, insulmax, tn->nt, &nq, &nn, proc_hash, procs);
           }
         }
       }
@@ -1695,20 +1610,13 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_qu
 }
 
 static void
-p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash, sc_array_t *proc_table, p4est_tree_neigh_info_t *info, sc_array_t *neighborhood)
+p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash, sc_array_t *procs, p4est_tree_neigh_info_t *info)
 {
   p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, t);
   p4est_quadrant_t f = tree->first_desc;
   p4est_quadrant_t l = tree->last_desc;
   p4est_quadrant_t a, af, al, fstop, temp;
   int           alevel, fid, lid, idxor, dir, fstopid;
-  int           rank = p4est->mpirank;
-
-  p4est_tree_ghost_neigh_add_r (p4est, t, info->offset[P4EST_INSUL / 2],
-                                info->offset[P4EST_INSUL], t, 0, 0,
-                                rank, rank,
-                                NULL, NULL, proc_hash, proc_table,
-                                neighborhood);
 
   p4est_nearest_common_ancestor (&f, &l, &a);
 
@@ -1718,7 +1626,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
   p4est_quadrant_last_descendant (&a, &al, P4EST_QMAXLEVEL);
   if (p4est_quadrant_is_equal (&f, &af) &&
       p4est_quadrant_is_equal (&l, &al)) {
-    p4est_tree_ghost_neighborhood_insert (p4est, t, &a, neighborhood, info, proc_hash, proc_table);
+    p4est_tree_ghost_neighborhood_insert (p4est, t, &a, info, proc_hash, procs);
     return;
   }
   fid = p4est_quadrant_ancestor_id (&f, alevel + 1);
@@ -1740,7 +1648,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
   P4EST_ASSERT (!p4est_quadrant_overlaps (&f, &fstop) && p4est_quadrant_compare (&f, &fstop) < 0);
   P4EST_ASSERT (p4est_quadrant_compare (&fstop, &l) <= 0);
   for (;;) {
-    p4est_tree_ghost_neighborhood_insert (p4est, t, &f, neighborhood, info, proc_hash, proc_table);
+    p4est_tree_ghost_neighborhood_insert (p4est, t, &f, info, proc_hash, procs);
     fid = p4est_quadrant_child_id (&f);
     while (fid == P4EST_CHILDREN - 1) {
       p4est_quadrant_parent (&f, &f);
@@ -1756,7 +1664,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
     while (p4est_quadrant_is_ancestor (&fstop, &l)) {
       fstop.level++;
     }
-    p4est_tree_ghost_neighborhood_insert (p4est, t, &fstop, neighborhood, info, proc_hash, proc_table);
+    p4est_tree_ghost_neighborhood_insert (p4est, t, &fstop, info, proc_hash, procs);
     if (p4est_quadrant_is_equal (&fstop, &l)) {
       break;
     }
@@ -1765,14 +1673,77 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
     p4est_quadrant_sibling (&fstop, &temp, fstopid + 1);
     fstop = temp;
   }
-  {
-    sc_array_t array_sorter;
+}
 
-    sc_array_init_data (&array_sorter, neighborhood->array,
-                        2 * sizeof (p4est_quadrant_t),
-                        neighborhood->elem_count / 2);
-    sc_array_sort (&array_sorter, p4est_quadrant_compare_piggy);
+static int
+p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t *info, p4est_quadrant_t *q)
+{
+  int i, j, k, l, m, p;
+#ifdef P4_TO_P8
+  int kstart = 0, kend = 3;
+#else
+  int kstart = 1, kend = 2;
+#endif
+  p4est_quadrant_t fd, ld;
+  p4est_quadrant_t *nd;
+
+  for (l = 0; l <= P4EST_QMAXLEVEL; l++) {
+    p4est_quadrant_t a, n;
+    p4est_qcoord_t h;
+
+    p4est_quadrant_ancestor (q, l, &a);
+    h = P4EST_QUADRANT_LEN (l);
+    n.level = l;
+    for (m = 0, k = kstart; k < kend; k++) {
+      for (j = 0; j < 3; j++) {
+        for (i = 0; i < 3; i++, m++) {
+          int rootinsul;
+
+          n.x = a.x + (i - 1) * h;
+          n.y = a.y + (j - 1) * h;
+#ifdef P4_TO_P8
+          n.z = a.z + (j - 1) * h;
+#endif
+
+          rootinsul = p4est_root_insul (&n);
+
+          if (rootinsul == P4EST_INSUL / 2) {
+            /* in root */
+            p4est_quadrant_first_descendant (&n, &fd, P4EST_QMAXLEVEL);
+            p4est_quadrant_last_descendant (&n, &ld, P4EST_QMAXLEVEL);
+            p = p4est_comm_find_owner (p4est, q->p.which_tree, &fd, p4est->mpirank);
+            nd = &p4est->global_first_position[p + 1];
+            if (p4est_quadrant_compare_piggy (&ld, nd) < 0) {
+              /* n is entirely contained in one process */
+              return l;
+            }
+          }
+          else {
+            size_t s, s_start, s_end;
+
+            s_start = info->offset[rootinsul];
+            s_end = info->offset[rootinsul + 1];
+            for (s = s_start; s < s_end; s++) {
+              p4est_quadrant_t nn;
+              p4est_tree_neigh_t *tn = (p4est_tree_neigh_t *) sc_array_index (&(info->tnarray), s);
+
+              p4est_quadrant_utransform (&n, &nn, &(tn->u[0]), 0);
+              p4est_quadrant_first_descendant (&nn, &fd, P4EST_QMAXLEVEL);
+              p4est_quadrant_last_descendant (&nn, &ld, P4EST_QMAXLEVEL);
+              p = p4est_comm_find_owner (p4est, q->p.which_tree, &fd, p4est->mpirank);
+              nd = &p4est->global_first_position[p + 1];
+              if (p4est_quadrant_compare_piggy (&ld, nd) < 0) {
+                /* nn is entirely contained in one process */
+                return l;
+              }
+            }
+          }
+        }
+      }
+    }
   }
+  SC_ABORT_NOT_REACHED();
+  return -1;
 }
 
 static void
@@ -1790,23 +1761,137 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   sc_flopinfo_t snap;
   sc_mempool_t       *qpool;
   sc_mempool_t       *list_alloc;
-  sc_array_t         *neighborhoods;
+  sc_array_t         *procs;
   int *proc_hash;
-  sc_array_t *proc_table;
+  int minlevel[2];
+  int procrange[2][2];
+  p4est_quadrant_t desc[2];
   size_t s;
+  int rank = p4est->mpirank;
 
   P4EST_FUNC_SNAP (p4est, &snap);
+
+  /* first figure out the parallel neighborhood */
+  num_trees = SC_MAX (0, llt + 1 - flt);
+  proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
+  procs = sc_array_new_size (sizeof (int), P4EST_INSUL);
+  sc_array_truncate (procs);
+  *((int *) sc_array_push (procs)) = rank;
+  proc_hash[rank] = 1;
+  tinfo = P4EST_ALLOC (p4est_tree_neigh_info_t, num_trees);
+  /* block balance local */
+  for (t = flt, all_incount = 0; t <= llt; t++) {
+    p4est_tree_neigh_info_t *info;
+
+    /* Get the connectivity information for this tree */
+    info = &tinfo[t - flt];
+    p4est_tree_get_conn_info (p4est, t, info);
+
+    /* find ghost neighbors of this tree */
+    p4est_tree_ghost_neighborhood (p4est, t, proc_hash, procs, info);
+  }
+  sc_array_sort (procs, sc_int_compare);
+  for (s = 0; s < procs->elem_count; s++) {
+    int p = *((int *) sc_array_index (procs, s));
+
+    proc_hash[p] = s + 1;
+  }
+#ifdef P4EST_ENABLE_DEBUG
+  {
+    int *proc_hash_T = P4EST_ALLOC (int, p4est->mpisize);
+    int mpiret;
+    int i;
+
+    mpiret = sc_MPI_Alltoall (proc_hash, 1, sc_MPI_INT, proc_hash_T, 1, sc_MPI_INT,
+                              p4est->mpicomm);
+    SC_CHECK_MPI (mpiret);
+
+    for (i = 0; i < p4est->mpisize; i++) {
+      P4EST_ASSERT (!!proc_hash[i] == !!proc_hash_T[i]);
+    }
+    P4EST_FREE (proc_hash_T);
+  }
+#endif
+
+  if (num_trees) {
+    int i;
+    int empty;
+
+    desc[0] = p4est->global_first_position[rank];
+    desc[1] = p4est->global_first_position[rank + 1];
+    empty = p4est_quadrant_is_equal_piggy (&desc[0], &desc[1]);
+    if (!empty) {
+      if (desc[1].p.which_tree > llt) {
+        p4est_qcoord_t last = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
+        desc[1].p.which_tree--;
+
+        desc[1].x = last;
+        desc[1].y = last;
+#ifdef P4_TO_P8
+        desc[1].z = last;
+#endif
+      }
+      else {
+        uint64_t id = p4est_quadrant_linear_id (&desc[1], P4EST_QMAXLEVEL);
+
+        p4est_quadrant_set_morton (&desc[1], P4EST_QMAXLEVEL, id - 1);
+      }
+    }
+
+    for (i = 0; i < 2; i++) {
+      p4est_quadrant_t a, fd, ld;
+      int t = i ? llt : flt;
+
+      minlevel[i] = p4est_balance_sort_min_insulation_level (p4est, &tinfo[t - flt], &desc[i]);
+      p4est_quadrant_ancestor (&desc[i], minlevel[i], &a);
+      p4est_quadrant_first_descendant(&a, &fd, P4EST_QMAXLEVEL);
+      p4est_quadrant_last_descendant(&a, &ld, P4EST_QMAXLEVEL);
+      procrange[i][0] = p4est_comm_find_owner (p4est, t, &fd, rank);
+      procrange[i][1] = p4est_comm_find_owner (p4est, t, &ld, rank);
+    }
+    if (empty) {
+      if (procrange[0][0] != procrange[1][0]) {
+        /* communicate with no one */
+        procrange[0][0] = procrange[1][0] = -1;
+        procrange[0][1] = procrange[1][1] = -2;
+      }
+    }
+    else {
+      if (procrange[0][0] == procrange[1][0]) {
+        P4EST_ASSERT (procrange[0][1] == procrange[1][1]);
+      }
+      else {
+        P4EST_ASSERT (procrange[0][1] == rank && procrange[1][0] == rank);
+      }
+    }
+#ifdef P4EST_ENABLE_DEBUG
+    {
+      int * comm_out = P4EST_ALLOC_ZERO (int, p4est->mpisize);
+      int * comm_in = P4EST_ALLOC (int, p4est->mpisize);
+      int i, j, mpiret;
+
+      for (i = 0; i < 2; i++) {
+        for (j = procrange[i][0]; j <= procrange[i][1]; j++) {
+          comm_out[j] = 1;
+        }
+      }
+      mpiret = sc_MPI_Alltoall (comm_out, 1, sc_MPI_INT, comm_in, 1, sc_MPI_INT,
+                                p4est->mpicomm);
+      SC_CHECK_MPI (mpiret);
+
+      for (i = 0; i < p4est->mpisize; i++) {
+        P4EST_ASSERT (comm_out[i] == comm_in[i]);
+      }
+      P4EST_FREE (comm_out);
+      P4EST_FREE (comm_in);
+    }
+#endif
+  }
+
   if (p4est->inspect != NULL) {
     pre_adapt_flags = p4est->inspect->pre_adapt_flags;
   }
 
-  num_trees = SC_MAX (0, llt + 1 - flt);
-
-  if (num_trees) {
-    neighborhoods = P4EST_ALLOC (sc_array_t, num_trees);
-    tinfo = P4EST_ALLOC (p4est_tree_neigh_info_t, num_trees);
-    proc_table = sc_array_new (sizeof (int *) * num_trees);
-  }
   outquads = sc_array_new (sizeof (p4est_quadrant_t));
   inquads = sc_array_new (sizeof (p4est_quadrant_t));
 
@@ -1832,7 +1917,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   qpool = p4est->quadrant_pool;
   list_alloc = sc_mempool_new (sizeof (sc_link_t));
 
-  proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
   /* block balance local */
   for (t = flt, all_incount = 0; t <= llt; t++) {
     const int8_t       *this_pre_adapt_flags = NULL;
@@ -1841,20 +1925,31 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     size_t              s, treecount;
     p4est_quadrant_t   *dest;
     p4est_quadrant_t    root;
-    int                 minlevel = 0;
-    p4est_tree_neigh_info_t *info;
-    sc_array_t         *neighborhood = &neighborhoods[t - flt];
+    int                 thisminlevel = 0;
 
+    tree = p4est_tree_array_index (p4est->trees, t);
 
-    /* Get the connectivity information for this tree */
-    info = &tinfo[t - flt];
-    p4est_tree_get_conn_info (p4est, t, info);
-
-    sc_array_init (neighborhood, sizeof (p4est_quadrant_t));
-    p4est_tree_ghost_neighborhood (p4est, t, proc_hash, proc_table, info, neighborhood);
+    p4est_nearest_common_ancestor (&tree->first_desc, &tree->last_desc, &root);
+    if (t == flt && t == llt) {
+      if (minlevel[0] <= root.level) {
+        P4EST_ASSERT (minlevel[1] == minlevel[0]);
+        p4est_quadrant_ancestor (&tree->first_desc, &root, minlevel[0]);
+      }
+      else {
+        P4EST_ASSERT (minlevel[1] > root.level);
+        if (minlevel[0] > root.level + 1 || minlevel[1] > root.level + 1) {
+          P4EST_ESSENTIALF ("minlevel[0] = %d, minlevel[1] = %d\n", minlevel[0], minlevel[1]);
+        }
+      }
+    }
+    else if (t == flt) {
+      p4est_quadrant_ancestor (&tree->first_desc, &root, SC_MIN (root.level, minlevel[0]));
+    }
+    else if (t == llt) {
+      p4est_quadrant_ancestor (&tree->first_desc, &root, SC_MIN (root.level, minlevel[1]));
+    }
 
 #if 0
-    tree = p4est_tree_array_index (p4est->trees, t);
     tquadrants = &tree->quadrants;
     if (pre_adapt_flags) {
       this_pre_adapt_flags = &pre_adapt_flags[all_incount];
@@ -1886,22 +1981,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     sc_array_truncate (inquads);
 #endif
   }
-#ifdef P4EST_ENABLE_DEBUG
-  {
-    int *proc_hash_T = P4EST_ALLOC (int, p4est->mpisize);
-    int mpiret;
-    int i;
-
-    mpiret = sc_MPI_Alltoall (proc_hash, 1, sc_MPI_INT, proc_hash_T, 1, sc_MPI_INT,
-                              p4est->mpicomm);
-    SC_CHECK_MPI (mpiret);
-
-    for (i = 0; i < p4est->mpisize; i++) {
-      P4EST_ASSERT (!!proc_hash[i] == !!proc_hash_T[i]);
-    }
-    P4EST_FREE (proc_hash_T);
-  }
-#endif
   /* block balance parallel sort */
   /* ghost neighbor balance */
   for (t = flt; t <= llt; t++) {
@@ -1911,24 +1990,8 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   sc_mempool_destroy (list_alloc);
   sc_array_destroy (inquads);
   sc_array_destroy (outquads);
-  if (num_trees) {
-    for (t = 0; t < num_trees; t++) {
-      sc_array_reset (&(tinfo[t].tnarray));
-      sc_array_reset (&neighborhoods[t]);
-    }
-    P4EST_FREE (tinfo);
-    P4EST_FREE (neighborhoods);
-    for (s = 0; s < proc_table->elem_count; s++) {
-      int ** p_tree = (int **) sc_array_index (proc_table, s);
-
-      for (t = 0; t < num_trees; t++) {
-        if (p_tree[t]) {
-          P4EST_FREE (p_tree[t]);
-        }
-      }
-    }
-    sc_array_destroy (proc_table);
-  }
+  sc_array_destroy (procs);
+  P4EST_FREE (tinfo);
   P4EST_FREE (proc_hash);
   P4EST_FUNC_SHOT (p4est, &snap);
 }
