@@ -1136,17 +1136,18 @@ p8est_connectivity_edge_neighbor_corner (int c, int e, int ne, int o)
 }
 
 void
-p8est_edge_transform_to_utransform (p8est_edge_transform_t * et,
-                                    int iedge, int utransform[])
+p8est_edge_transform_to_utransform (p8est_edge_transform_t *et,
+                                    int iedge,
+                                    int utransform[])
 {
-  int                 nedge = et->nedge;
-  int                 iaxis = iedge / 4;
-  int                 naxis = nedge / 4;
-  int                 icorner = iedge % 4;
-  int                 ncorner = nedge % 4;
-  int                 i, temp;
-  int                 pos = 1;
-  int                 naxes[2];
+  int nedge = et->nedge;
+  int iaxis = iedge / 4;
+  int naxis = nedge / 4;
+  int icorner = iedge % 4;
+  int ncorner = nedge % 4;
+  int i, temp;
+  int pos = 1;
+  int naxes[2];
 
   utransform[naxis] = iaxis;
   naxes[0] = SC_MIN ((naxis + 1) % 3, (naxis + 2) % 3);
@@ -1164,8 +1165,8 @@ p8est_edge_transform_to_utransform (p8est_edge_transform_t * et,
     icorner = (icorner >> 1) + ((icorner & 1) << 1);
   }
   for (i = 0; i < 2; i++) {
-    int                 ic = (icorner & (1 << i)) >> i;
-    int                 nc = (ncorner & (1 << i)) >> i;
+    int ic = (icorner & (1 << i)) >> i;
+    int nc = (ncorner & (1 << i)) >> i;
 
     if (nc == ic) {
       utransform[3 + naxes[i]] = -1;
@@ -1186,8 +1187,8 @@ p8est_edge_transform_to_utransform (p8est_edge_transform_t * et,
     if (ncorner == 1 || ncorner == 2) {
       utransform[3 + naxes[0]] = -utransform[3 + naxes[0]];
       utransform[3 + naxes[1]] = -utransform[3 + naxes[1]];
-      utransform[6 + naxes[0]] = 1 - utransform[6 + naxes[0]];
-      utransform[6 + naxes[1]] = 1 - utransform[6 + naxes[1]];
+      utransform[6 + naxes[0]] = 1-utransform[6 + naxes[0]];
+      utransform[6 + naxes[1]] = 1-utransform[6 + naxes[1]];
     }
   }
 }

@@ -1451,7 +1451,7 @@ p4est_quadrant_disjoint_parent (const void *a, const void *b)
   return 0;
 }
 
-static int
+int
 p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
 {
   size_t s, n = tquadrants->elem_count;
@@ -1483,7 +1483,7 @@ p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
 static void
 p4est_quadrant_array_reduced_insert (sc_array_t *array, p4est_quadrant_t *q)
 {
-  size_t si;
+  ssize_t si;
   P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
 
   si = sc_array_bsearch (array, q, p4est_quadrant_disjoint_parent);
@@ -1503,15 +1503,17 @@ p4est_quadrant_array_reduced_insert (sc_array_t *array, p4est_quadrant_t *q)
       si = acount;
     }
     sc_array_resize (array, acount + 1);
-    memmove (sc_array_index (array, si + 1), sc_array_index (array, si),
-             (acount - si) * array->elem_size);
+    if (si < acount) {
+      memmove (sc_array_index (array, si + 1), sc_array_index (array, si),
+               (acount - si) * array->elem_size);
+    }
     p = p4est_quadrant_array_index (array, si);
     *p = *q;
   }
   P4EST_ASSERT (p4est_quadrant_array_is_reduced (array));
 }
 
-static void
+void
 p4est_quadrant_array_insert_endpoints (sc_array_t *inlist,
                                        p4est_quadrant_t *dom,
                                        p4est_quadrant_t *first_desc,
@@ -1586,9 +1588,10 @@ p4est_quadrant_array_insert_endpoints (sc_array_t *inlist,
  *                                tries to insert the ancestor of an existing
  *                                quadrant
  */
-static void
+void
 p4est_balance_kernel (sc_array_t * inlist,
                       p4est_quadrant_t * dom,
+                      int inminlevel,
                       int bound,
                       sc_mempool_t * qpool,
                       sc_mempool_t * list_alloc,
@@ -1652,6 +1655,7 @@ p4est_balance_kernel (sc_array_t * inlist,
 
   P4EST_ASSERT (sc_array_is_sorted (inlist, p4est_quadrant_compare));
 
+  minlevel = SC_MAX (inminlevel, minlevel);
   /* initialize temporary storage */
   for (l = 0; l <= minlevel; ++l) {
     /* we don't need a hash table for minlevel, because all minlevel
@@ -1912,6 +1916,10 @@ p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant
 
   P4EST_ASSERT (p4est_quadrant_array_is_reduced (inlist));
 
+  P4EST_QUADRANT_INIT (&tempq);
+  P4EST_QUADRANT_INIT (&tempp);
+  P4EST_QUADRANT_INIT (&fd);
+
   incount = inlist->elem_count;
 
   if (first_desc != NULL) {
@@ -2117,7 +2125,7 @@ p4est_balance_replace_recursive (p4est_t * p4est, p4est_topidx_t nt,
   }
 }
 
-static void
+void
 p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, const int8_t * pre_adapt_flags)
 {
   p4est_quadrant_t *q, *p, tempq;
@@ -2264,7 +2272,7 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
   if (btype) {
     /* balance */
     p4est_quadrant_array_insert_endpoints (inlist, &root, &(tree->first_desc), &(tree->last_desc));
-    p4est_balance_kernel (inlist, &root, bound, qpool,
+    p4est_balance_kernel (inlist, &root, 0, bound, qpool,
                           list_alloc,
                           &(tree->first_desc),
                           &(tree->last_desc),
@@ -2596,7 +2604,7 @@ p4est_balance_border (p4est_t * p4est, p4est_connect_type_t btype,
     fcount = flist->elem_count;
 
     /* balance them within the containing quad */
-    p4est_balance_kernel (inlist, p, bound, qpool, list_alloc,
+    p4est_balance_kernel (inlist, p, 0, bound, qpool, list_alloc,
                           NULL, NULL,
                           &count_already_inlist,
                           &count_already_outlist,

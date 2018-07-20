@@ -306,6 +306,17 @@ p4est_gloidx_t      p8est_partition_given (p8est_t * p8est,
                                            const p4est_locidx_t *
                                            num_quadrants_in_proc);
 
+void                p8est_quadrant_array_reduce (sc_array_t *array, sc_array_t *reduced, const int8_t *pre_adapt_flags);
+int                 p8est_quadrant_array_is_reduced (sc_array_t *array);
+void                p8est_quadrant_array_insert_endpoints (sc_array_t *array, p4est_quadrant_t *dom, p4est_quadrant_t *first_desc, p4est_quadrant_t *last_desc);
+void                p8est_balance_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, int inminlevel, int bound,
+                                          sc_mempool_t *qpool,
+                                          sc_mempool_t *list_alloc,
+                                          p4est_quadrant_t *first_desc,
+                                          p4est_quadrant_t *last_desc,
+                                          size_t *count_in, size_t *count_out,
+                                          size_t *count_an);
+
 SC_EXTERN_C_END;
 
 #endif /* !P8EST_ALGORITHMS_H */

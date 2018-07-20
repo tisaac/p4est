@@ -815,7 +815,7 @@ p4est_quadrant_sibling (const p4est_quadrant_t * q, p4est_quadrant_t * r,
   const p4est_qcoord_t shift = P4EST_QUADRANT_LEN (q->level);
 
   P4EST_ASSERT (p4est_quadrant_is_extended (q));
-  P4EST_ASSERT (q->level > 0);
+  P4EST_ASSERT (q->level > 0 || sibling_id == 0);
   P4EST_ASSERT (sibling_id >= 0 && sibling_id < P4EST_CHILDREN);
 
   r->x = (addx ? (q->x | shift) : (q->x & ~shift));

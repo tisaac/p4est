@@ -318,6 +318,11 @@
 #define p4est_partition_for_coarsening  p8est_partition_for_coarsening
 #define p4est_partition_given           p8est_partition_given
 #define p4est_partition_compute         p8est_partition_compute
+#define p4est_quadrant_array_reduce     p8est_quadrant_array_reduce
+#define p4est_quadrant_array_is_reduced p8est_quadrant_array_is_reduced
+#define p4est_quadrant_array_is_reduced p8est_quadrant_array_is_reduced
+#define p4est_quadrant_array_insert_endpoints p8est_quadrant_array_insert_endpoints
+#define p4est_balance_kernel            p8est_balance_kernel
 
 /* functions in p4est_communication */
 #define p4est_comm_parallel_env_assign  p8est_comm_parallel_env_assign
