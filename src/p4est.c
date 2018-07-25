@@ -1687,13 +1687,14 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
   p4est_quadrant_t fd, ld;
   p4est_quadrant_t *nd;
 
-  for (l = 0; l <= P4EST_QMAXLEVEL; l++) {
+  for (l = 0; l < P4EST_QMAXLEVEL; l++) {
     p4est_quadrant_t a, n;
     p4est_qcoord_t h;
 
     p4est_quadrant_ancestor (q, l, &a);
     h = P4EST_QUADRANT_LEN (l);
     n.level = l;
+    n.p.which_tree = q->p.which_tree;
     for (m = 0, k = kstart; k < kend; k++) {
       for (j = 0; j < 3; j++) {
         for (i = 0; i < 3; i++, m++) {
@@ -1711,6 +1712,7 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
             /* in root */
             p4est_quadrant_first_descendant (&n, &fd, P4EST_QMAXLEVEL);
             p4est_quadrant_last_descendant (&n, &ld, P4EST_QMAXLEVEL);
+            ld.p.which_tree = n.p.which_tree;
             p = p4est_comm_find_owner (p4est, q->p.which_tree, &fd, p4est->mpirank);
             nd = &p4est->global_first_position[p + 1];
             if (p4est_quadrant_compare_piggy (&ld, nd) < 0) {
@@ -1730,7 +1732,8 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
               p4est_quadrant_utransform (&n, &nn, &(tn->u[0]), 0);
               p4est_quadrant_first_descendant (&nn, &fd, P4EST_QMAXLEVEL);
               p4est_quadrant_last_descendant (&nn, &ld, P4EST_QMAXLEVEL);
-              p = p4est_comm_find_owner (p4est, q->p.which_tree, &fd, p4est->mpirank);
+              ld.p.which_tree = tn->nt;
+              p = p4est_comm_find_owner (p4est, tn->nt, &fd, p4est->mpirank);
               nd = &p4est->global_first_position[p + 1];
               if (p4est_quadrant_compare_piggy (&ld, nd) < 0) {
                 /* nn is entirely contained in one process */
@@ -1747,10 +1750,170 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
 }
 
 static void
+sc_array_crop (sc_array_t *array, size_t a_start, size_t a_end)
+{
+  P4EST_ASSERT (array);
+  P4EST_ASSERT (a_end >= a_start);
+  P4EST_ASSERT (a_end <= array->elem_count);
+  if (a_end == a_start) {
+    array->elem_count = 0;
+    return;
+  }
+  if (a_start) {
+    memmove (array->array, sc_array_index (array, a_start), (a_end - a_start) * array->elem_size);
+  }
+  array->elem_count = (a_end - a_start);
+}
+
+static void
+sc_array_push_copy (sc_array_t *array, size_t a_start, size_t a_end, sc_array_t *result)
+{
+  P4EST_ASSERT (result && array != result);
+  P4EST_ASSERT (result->elem_size == array->elem_size);
+  P4EST_ASSERT (a_end >= a_start);
+
+  if (a_end > a_start) {
+    char *dest = sc_array_push_count (result, a_end - a_start);
+    memcpy (dest, sc_array_index (array, a_start), (a_end - a_start) * array->elem_size);
+  }
+}
+
+#if 0
+static void
+p4est_quadrant_compare_insertion (const void *key, const void *memb)
+{
+  const p4est_quadrant_t *q = (const p4est_quadrant_t *) key;
+  const p4est_quadrant_t *p = (const p4est_quadrant_t *) memb;
+
+  if (p4est_quadrant_compare (q, &p[0]) < 0) {
+    return -1;
+  }
+  if (p4est_quadrant_compare (q, &p[1]) < 0) {
+    return 0;
+  }
+  return 1;
+}
+
+static size_t
+p4est_find_insertion (sc_array_t *qarray, p4est_quadrant_t *key)
+{
+  p4est_quadrant_t *q;
+  P4EST_ASSERT (qarray->elem_size == sizeof (p4est_quadrant_t));
+
+  if (!(qarray->elem_count)) {
+    return 0;
+  }
+  q = (p4est_quadrant_t *) qarray->array;
+  if (p4est_quadrant_compare (key, q) < 0) {
+    return 0;
+  }
+  else {
+    size_t sz;
+    sc_array_t comparator;
+
+    sc_array_init_view (&comparator, qarray, 0, qarray->elem_count - 1);
+    sz = sc_array_bsearch (&comparator, key, p4est_quadrant_compare_insertion);
+    if (sz < 0) {
+      return qarray->elem_count;
+    }
+    else {
+      return (size_t) sz;
+    }
+  }
+}
+#endif
+
+enum {
+  P4EST_BALSORT_ISEND,
+  P4EST_BALSORT_IPROBE,
+  P4EST_BALSORT_IRECV,
+  P4EST_BALSORT_MERGE,
+  P4EST_BALSORT_WAIT,
+  P4EST_BALSORT_SYNC,
+};
+
+static void
+p4est_quadrant_array_merge_reduce (sc_array_t *A, sc_array_t *B)
+{
+  size_t nnew = B->elem_count;
+  size_t nold = A->elem_count;
+  p4est_quadrant_t *a, *b, *c;
+  p4est_quadrant_t cp;
+  size_t i, j, k;
+
+  if (!nnew) {
+    return;
+  }
+  P4EST_ASSERT (nold == 0 || p4est_quadrant_array_is_reduced (A));
+  P4EST_ASSERT (p4est_quadrant_array_is_reduced (B));
+  (void) sc_array_push_count (A, nnew);
+  if (!nold) {
+    sc_array_copy (A, B);
+    return;
+  }
+  a = (p4est_quadrant_t *) sc_array_index (A, nnew);
+  b = (p4est_quadrant_t *) B->array;
+  c = (p4est_quadrant_t *) A->array;
+  memmove (a, c, nold * A->elem_size);
+  for (i = 0, j = 0, k = 0; i + j < nold + nnew;) {
+    p4est_quadrant_t *q, qp;
+    int comp;
+
+    if (i == nold) {
+      comp = -1;
+    }
+    else if (j == nnew) {
+      comp = 1;
+    }
+    else {
+      comp = p4est_quadrant_compare (b, a);
+    }
+    if (comp < 0) {
+      q = b++;
+      j++;
+    }
+    else if (comp > 0) {
+      q = a++;
+      i++;
+    }
+    else {
+      q = a++;
+      b++;
+      i++;
+      j++;
+    }
+    if (!q->level) {
+      continue;
+    }
+    if (!k) {
+      p4est_quadrant_parent (q, &cp);
+      *c = *q;
+      k++;
+    }
+    else {
+      P4EST_ASSERT (p4est_quadrant_compare (c, q) < 0);
+      p4est_quadrant_parent (q, &qp);
+      if (p4est_quadrant_overlaps (&cp, &qp)) {
+        if (q->level > c->level) {
+          *c = *q;
+          cp = qp;
+        }
+      }
+      else {
+        *(++c) = *q;
+        cp = qp;
+        k++;
+      }
+    }
+  }
+  A->elem_count = k;
+  P4EST_ASSERT (p4est_quadrant_array_is_reduced (A));
+}
+
+static void
 p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
                     p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
-  sc_array_t *inquads, *outquads;
   p4est_topidx_t t, num_trees;
   p4est_topidx_t flt = p4est->first_local_tree;
   p4est_topidx_t llt = p4est->last_local_tree;
@@ -1758,6 +1921,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   p4est_locidx_t all_incount;
   p4est_tree_neigh_info_t *tinfo = NULL;
   int bound;
+  int num_sort;
   sc_flopinfo_t snap;
   sc_mempool_t       *qpool;
   sc_mempool_t       *list_alloc;
@@ -1766,19 +1930,35 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   int minlevel[2];
   int procrange[2][2];
   p4est_quadrant_t desc[2];
-  size_t s;
+  size_t s, nneigh;
   int rank = p4est->mpirank;
+  sc_array_t *neigh_bufs;
+  sc_array_t *tree_bufs;
+  sc_array_t sort_bufs[2];
 
   P4EST_FUNC_SNAP (p4est, &snap);
 
   /* first figure out the parallel neighborhood */
   num_trees = SC_MAX (0, llt + 1 - flt);
+  if (!num_trees) {
+    p4est_quadrant_t q;
+
+    q = p4est->global_first_position[rank];
+    P4EST_ASSERT (p4est_quadrant_is_equal_piggy (&q, &p4est->global_first_position[rank + 1]));
+    if (q.x != 0 || q.y != 0 ||
+#ifdef P4_TO_P8
+        q.z != 0 ||
+#endif
+        0) {
+      flt = llt = q.p.which_tree;
+    }
+  }
   proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
   procs = sc_array_new_size (sizeof (int), P4EST_INSUL);
   sc_array_truncate (procs);
   *((int *) sc_array_push (procs)) = rank;
   proc_hash[rank] = 1;
-  tinfo = P4EST_ALLOC (p4est_tree_neigh_info_t, num_trees);
+  tinfo = P4EST_ALLOC (p4est_tree_neigh_info_t, llt + 1 - flt);
   /* block balance local */
   for (t = flt, all_incount = 0; t <= llt; t++) {
     p4est_tree_neigh_info_t *info;
@@ -1788,7 +1968,9 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     p4est_tree_get_conn_info (p4est, t, info);
 
     /* find ghost neighbors of this tree */
-    p4est_tree_ghost_neighborhood (p4est, t, proc_hash, procs, info);
+    if (num_trees) {
+      p4est_tree_ghost_neighborhood (p4est, t, proc_hash, procs, info);
+    }
   }
   sc_array_sort (procs, sc_int_compare);
   for (s = 0; s < procs->elem_count; s++) {
@@ -1812,30 +1994,38 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     P4EST_FREE (proc_hash_T);
   }
 #endif
+  nneigh = procs->elem_count;
+  neigh_bufs = P4EST_ALLOC (sc_array_t, nneigh);
+  for (s = 0; s < nneigh; s++) {
+    sc_array_init (&neigh_bufs[s], sizeof (p4est_quadrant_t));
+  }
+  tree_bufs = P4EST_ALLOC (sc_array_t, num_trees);
+  for (t = 0; t < num_trees; t++) {
+    sc_array_init (&tree_bufs[t], sizeof (p4est_quadrant_t));
+  }
 
-  if (num_trees) {
+  /* compute the processes I communicate with in the sort phase */
+  if (llt >= flt) {
     int i;
     int empty;
 
     desc[0] = p4est->global_first_position[rank];
     desc[1] = p4est->global_first_position[rank + 1];
     empty = p4est_quadrant_is_equal_piggy (&desc[0], &desc[1]);
-    if (!empty) {
-      if (desc[1].p.which_tree > llt) {
-        p4est_qcoord_t last = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
-        desc[1].p.which_tree--;
+    if (desc[1].p.which_tree > llt) {
+      p4est_qcoord_t last = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
+      desc[1].p.which_tree--;
 
-        desc[1].x = last;
-        desc[1].y = last;
+      desc[1].x = last;
+      desc[1].y = last;
 #ifdef P4_TO_P8
-        desc[1].z = last;
+      desc[1].z = last;
 #endif
-      }
-      else {
-        uint64_t id = p4est_quadrant_linear_id (&desc[1], P4EST_QMAXLEVEL);
+    }
+    else {
+      uint64_t id = p4est_quadrant_linear_id (&desc[1], P4EST_QMAXLEVEL);
 
-        p4est_quadrant_set_morton (&desc[1], P4EST_QMAXLEVEL, id - 1);
-      }
+      p4est_quadrant_set_morton (&desc[1], P4EST_QMAXLEVEL, id - 1);
     }
 
     for (i = 0; i < 2; i++) {
@@ -1850,50 +2040,66 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
       procrange[i][1] = p4est_comm_find_owner (p4est, t, &ld, rank);
     }
     if (empty) {
+      num_sort = 1;
       if (procrange[0][0] != procrange[1][0]) {
         /* communicate with no one */
         procrange[0][0] = procrange[1][0] = -1;
         procrange[0][1] = procrange[1][1] = -2;
+        num_sort = 0;
       }
     }
     else {
-      if (procrange[0][0] == procrange[1][0]) {
+      if (procrange[0][0] == procrange[1][0] &&
+          procrange[0][1] == procrange[1][1]) {
+        num_sort = 1;
+      }
+      else {
+        num_sort = 2;
+      }
+      P4EST_ASSERT (procrange[0][0] <= rank);
+      P4EST_ASSERT (rank <= procrange[1][1]);
+      if (procrange[0][1] > procrange[1][0]) {
+        P4EST_ASSERT (procrange[0][0] == procrange[1][0]);
         P4EST_ASSERT (procrange[0][1] == procrange[1][1]);
       }
       else {
-        P4EST_ASSERT (procrange[0][1] == rank && procrange[1][0] == rank);
+        P4EST_ASSERT (procrange[0][1] == rank);
+        P4EST_ASSERT (procrange[1][0] == rank);
       }
     }
-#ifdef P4EST_ENABLE_DEBUG
-    {
-      int * comm_out = P4EST_ALLOC_ZERO (int, p4est->mpisize);
-      int * comm_in = P4EST_ALLOC (int, p4est->mpisize);
-      int i, j, mpiret;
-
-      for (i = 0; i < 2; i++) {
-        for (j = procrange[i][0]; j <= procrange[i][1]; j++) {
-          comm_out[j] = 1;
-        }
-      }
-      mpiret = sc_MPI_Alltoall (comm_out, 1, sc_MPI_INT, comm_in, 1, sc_MPI_INT,
-                                p4est->mpicomm);
-      SC_CHECK_MPI (mpiret);
-
-      for (i = 0; i < p4est->mpisize; i++) {
-        P4EST_ASSERT (comm_out[i] == comm_in[i]);
-      }
-      P4EST_FREE (comm_out);
-      P4EST_FREE (comm_in);
-    }
-#endif
   }
+  else {
+    /* communicate with no one */
+    procrange[0][0] = procrange[1][0] = -1;
+    procrange[0][1] = procrange[1][1] = -2;
+    num_sort = 0;
+  }
+#ifdef P4EST_ENABLE_DEBUG
+  {
+    int * comm_out = P4EST_ALLOC_ZERO (int, p4est->mpisize);
+    int * comm_in = P4EST_ALLOC (int, p4est->mpisize);
+    int i, j, mpiret;
+
+    for (i = 0; i < 2; i++) {
+      for (j = procrange[i][0]; j <= procrange[i][1]; j++) {
+        comm_out[j] = 1;
+      }
+    }
+    mpiret = sc_MPI_Alltoall (comm_out, 1, sc_MPI_INT, comm_in, 1, sc_MPI_INT,
+                              p4est->mpicomm);
+    SC_CHECK_MPI (mpiret);
+
+    for (i = 0; i < p4est->mpisize; i++) {
+      P4EST_ASSERT (comm_out[i] == comm_in[i]);
+    }
+    P4EST_FREE (comm_out);
+    P4EST_FREE (comm_in);
+  }
+#endif
 
   if (p4est->inspect != NULL) {
     pre_adapt_flags = p4est->inspect->pre_adapt_flags;
   }
-
-  outquads = sc_array_new (sizeof (p4est_quadrant_t));
-  inquads = sc_array_new (sizeof (p4est_quadrant_t));
 
   switch (p4est_connect_type_int (btype)) {
   case 0:
@@ -1917,80 +2123,415 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   qpool = p4est->quadrant_pool;
   list_alloc = sc_mempool_new (sizeof (sc_link_t));
 
+  sc_array_init (&sort_bufs[0], sizeof (p4est_quadrant_t));
+  sc_array_init (&sort_bufs[1], sizeof (p4est_quadrant_t));
   /* block balance local */
-  for (t = flt, all_incount = 0; t <= llt; t++) {
+  for (t = flt, all_incount = 0; t < flt + num_trees; t++) {
     const int8_t       *this_pre_adapt_flags = NULL;
     p4est_tree_t       *tree;
     sc_array_t         *tquadrants;
-    size_t              s, treecount;
-    p4est_quadrant_t   *dest;
+    size_t              treecount;
     p4est_quadrant_t    root;
+    size_t              ancstart, ancend, selfstart, selfend;
+    sc_array_t         *inquads = &tree_bufs[t - flt];
     int                 thisminlevel = 0;
 
     tree = p4est_tree_array_index (p4est->trees, t);
-
-    p4est_nearest_common_ancestor (&tree->first_desc, &tree->last_desc, &root);
-    if (t == flt && t == llt) {
-      if (minlevel[0] <= root.level) {
-        P4EST_ASSERT (minlevel[1] == minlevel[0]);
-        p4est_quadrant_ancestor (&tree->first_desc, &root, minlevel[0]);
-      }
-      else {
-        P4EST_ASSERT (minlevel[1] > root.level);
-        if (minlevel[0] > root.level + 1 || minlevel[1] > root.level + 1) {
-          P4EST_ESSENTIALF ("minlevel[0] = %d, minlevel[1] = %d\n", minlevel[0], minlevel[1]);
-        }
-      }
-    }
-    else if (t == flt) {
-      p4est_quadrant_ancestor (&tree->first_desc, &root, SC_MIN (root.level, minlevel[0]));
-    }
-    else if (t == llt) {
-      p4est_quadrant_ancestor (&tree->first_desc, &root, SC_MIN (root.level, minlevel[1]));
-    }
-
-#if 0
     tquadrants = &tree->quadrants;
-    if (pre_adapt_flags) {
-      this_pre_adapt_flags = &pre_adapt_flags[all_incount];
-    }
-    all_incount += tquadrants->elem_count;
 
     /* initial log message for this tree */
     P4EST_VERBOSEF ("Into balance tree %lld with %llu\n", (long long) t,
                     (unsigned long long) tquadrants->elem_count);
 
+    p4est_nearest_common_ancestor (&tree->first_desc, &tree->last_desc, &root);
+    if (t == flt && t == llt) {
+      if (minlevel[0] <= root.level) {
+        P4EST_ASSERT (minlevel[1] == minlevel[0]);
+        p4est_quadrant_ancestor (&tree->first_desc, minlevel[0], &root);
+      }
+      /* is it worth it to split the local balance when it consists of two
+       * regions that do not influence each other ? */
+#if 0
+      else if (minlevel[0] > root.level + 1 && minlevel[1] > root.level + 1) {
+        int fid, lid, level, lolevel, hilevel;
+        p4est_quadrant_t lo, hi, ub, lb, temp;
+        p4est_qcoord_t H, diff[P4EST_DIM];
+
+        fid = p4est_quadrant_ancestor_id (&tree->first_desc, root.level + 1);
+        lid = p4est_quadrant_ancestor_id (&tree->last_desc, root.level + 1);
+        P4EST_ASSERT (lid == fid + 1);
+
+        p4est_quadrant_child (&root, &lo, fid);
+        p4est_quadrant_last_descendant (&lo, &ub, P4EST_QMAXLEVEL);
+        p4est_nearest_common_ancestor (&tree->first_desc, &ub, &lo);
+        lolevel = SC_MIN (lo.level, minlevel[0]);
+
+        p4est_quadrant_child (&root, &hi, lid);
+        p4est_quadrant_first_descendant (&hi, &lb, P4EST_QMAXLEVEL);
+        p4est_nearest_common_ancestor (&tree->last_desc, &lb, &hi);
+        hilevel = SC_MIN (hi.level, minlevel[1]);
+        level = SC_MIN (lolevel, hilevel);
+
+        p4est_quadrant_ancestor (&tree->first_desc, level, &lo);
+        p4est_quadrant_ancestor (&tree->last_desc, level, &hi);
+
+        H = P4EST_QUADRANT_LEN (level);
+        diff[0] = hi.x - lo.x;
+        diff[1] = hi.y - lo.y;
+#ifdef P4_TO_P8
+        diff[2] = hi.z - lo.z;
+#endif
+        if (diff[0] < -H || diff[0] > H ||
+            diff[1] < -H || diff[1] > H ||
+#ifdef P4_TO_P8
+            diff[2] < -H || diff[2] > H ||
+#endif
+            0) {
+          P4EST_DEBUGF ("Split root: [%d, %d], [%d, %d], [%d, %d, %d], %d\n", lolevel, hilevel, minlevel[0], minlevel[1],
+                        diff[0], diff[1],
+#ifdef P4_TO_P8
+                        diff[2],
+#else
+                        0,
+#endif
+                        H);
+        }
+      }
+#endif
+    }
+    else if (t == flt) {
+      p4est_quadrant_ancestor (&tree->first_desc, SC_MIN (root.level, minlevel[0]), &root);
+    }
+    else if (t == llt) {
+      p4est_quadrant_ancestor (&tree->first_desc, SC_MIN (root.level, minlevel[1]), &root);
+    }
+
+    if (pre_adapt_flags) {
+      this_pre_adapt_flags = &pre_adapt_flags[all_incount];
+    }
+    all_incount += tquadrants->elem_count;
+
+
     /* local balance first pass */
     p4est_quadrant_array_reduce (tquadrants, inquads, this_pre_adapt_flags);
-    p4est_quadrant_array_insert_endpoints (inquads, &root, &(tree->first_desc), &(tree->last_desc));
-    p4est_balance_kernel (inquads, &root, minlevel, bound, qpool,
+    if (pre_adapt_flags) {
+      p4est_quadrant_array_insert_endpoints (inquads, &root, &tree->first_desc, &tree->last_desc);
+    }
+    p4est_balance_kernel (inquads, &root, thisminlevel, bound, qpool,
                           list_alloc, NULL, NULL, NULL, NULL, NULL);
 
-
     treecount = inquads->elem_count;
-    for (s = 0; s < treecount; s++) {
-      p4est_quadrant_t *q = p4est_quadrant_array_index (inquads, s);
-
-      q->p.which_tree = t;
-    }
     P4EST_VERBOSEF ("Balance tree %lld A %llu (reduced)\n",
                     (long long) t, (unsigned long long) treecount);
-    dest = sc_array_push_count (outquads, treecount);
-    memcpy (dest, inquads->array, treecount * sizeof (p4est_quadrant_t));
 
-    sc_array_truncate (inquads);
+    if (t > flt && t < llt) {
+      continue;
+    }
+
+    if (t == flt) {
+      ssize_t sz;
+      p4est_quadrant_t fdesc, anc;
+
+      fdesc = tree->first_desc;
+      while (fdesc.level > 0 && !p4est_quadrant_child_id (&fdesc)) {
+        fdesc.level--;
+      }
+      sz = p4est_find_lower_bound (inquads, &fdesc, 0);
+      if (sz < 0) {
+        sz = inquads->elem_count;
+      }
+#ifdef P4EST_ENABLE_DEBUG
+      {
+        p4est_quadrant_t *q = (sz == inquads->elem_count) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz);
+        p4est_quadrant_t *p = (sz == 0) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz - 1);
+        if (q) {
+          p4est_quadrant_t fd;
+
+          p4est_quadrant_first_descendant (q, &fd, P4EST_QMAXLEVEL);
+          P4EST_ASSERT (p4est_quadrant_compare (&tree->first_desc, &fd) <= 0);
+        }
+        if (p) {
+          p4est_quadrant_t fd;
+
+          p4est_quadrant_first_descendant (p, &fd, P4EST_QMAXLEVEL);
+          P4EST_ASSERT (p4est_quadrant_compare (&fd, &tree->first_desc) < 0);
+        }
+      }
 #endif
+      selfstart = sz;
+
+      p4est_quadrant_ancestor (&desc[0], minlevel[0], &anc);
+
+      sz = p4est_find_lower_bound (inquads, &anc, 0);
+      if (sz < 0) {
+        sz = inquads->elem_count;
+      }
+      ancstart = sz;
+
+      P4EST_ASSERT (ancstart <= selfstart);
+      sc_array_push_copy (inquads, ancstart, selfstart, &sort_bufs[0]);
+    }
+    else {
+      selfstart = 0;
+    }
+    if (t == llt) {
+      ssize_t sz;
+      p4est_quadrant_t anc, ub;
+
+      sz = p4est_find_higher_bound (inquads, &tree->last_desc, 0);
+      if (sz < 0) {
+        sz = 0;
+      }
+      else {
+        sz++;
+      }
+#ifdef P4EST_ENABLE_DEBUG
+      {
+        p4est_quadrant_t *q = (sz == inquads->elem_count) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz);
+        p4est_quadrant_t *p = (sz == 0) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz - 1);
+        if (q) {
+          p4est_quadrant_t fd;
+
+          p4est_quadrant_first_descendant (q, &fd, P4EST_QMAXLEVEL);
+          P4EST_ASSERT (p4est_quadrant_compare (&tree->last_desc, &fd) < 0);
+        }
+        if (p) {
+          p4est_quadrant_t fd;
+
+          p4est_quadrant_first_descendant (p, &fd, P4EST_QMAXLEVEL);
+          P4EST_ASSERT (p4est_quadrant_compare (&fd, &tree->last_desc) <= 0);
+        }
+      }
+#endif
+      selfend = sz;
+
+      p4est_quadrant_ancestor (&desc[1], minlevel[1], &anc);
+      p4est_quadrant_last_descendant (&anc, &ub, P4EST_QMAXLEVEL);
+      sz = p4est_find_higher_bound (inquads, &ub, 0);
+      if (sz < 0) {
+        sz = 0;
+      }
+      else {
+        sz++;
+      }
+      ancend = sz;
+      sc_array_push_copy (inquads, selfend, ancend, &sort_bufs[1]);
+    }
+    else {
+      selfend = inquads->elem_count;
+    }
+    sc_array_crop (inquads, selfstart, selfend);
+  }
+
+#if P4EST_ENABLE_MPI
+  if (p4est->inspect && p4est->inspect->stats) {
+    if (!sc_statistics_has (p4est->inspect->stats, "balance sort send")) {
+      sc_statistics_add_empty (p4est->inspect->stats, "balance sort send");
+    }
+    if (!sc_statistics_has (p4est->inspect->stats, "balance sort recv")) {
+      sc_statistics_add_empty (p4est->inspect->stats, "balance sort recv");
+    }
   }
   /* block balance parallel sort */
+  if (num_sort > 0) {
+    int start, lim;
+    int orig[2];
+    int me[2];
+    int rem[2];
+    int i, n[2];
+    MPI_Request sendreq[2];
+    MPI_Request recvreq[2];
+    int mpiret;
+    int bit[2] = {0, 0};
+    int proc[2] = {-1, -1};
+    int state[2];
+    sc_array_t recv_bufs[2], send_bufs[2];
+    size_t lastoff[2], lastsplit[2];
+    p4est_quadrant_t lastpos[2];
+    int num_active;
+
+    sc_array_init (&recv_bufs[0], sizeof (p4est_quadrant_t));
+    sc_array_init (&recv_bufs[1], sizeof (p4est_quadrant_t));
+    sc_array_init (&send_bufs[0], sizeof (p4est_quadrant_t));
+    sc_array_init (&send_bufs[1], sizeof (p4est_quadrant_t));
+
+    bit[0] = bit[1] = -1;
+    for (i = 0; i < 2; i++) {
+      int shift = SC_LOG2_64 (procrange[i][1] - procrange[i][0]);
+      if (shift >= 0) {
+        bit[i] = 1 << shift;
+      }
+      else {
+        bit[i] = 0;
+      }
+      state[i] = P4EST_BALSORT_ISEND;
+    }
+
+    num_active = 2;
+    while (bit[0] > 0 || bit[1] > 0) {
+      for (i = 0; i < 2; i++) {
+        int flg;
+        int rcount;
+        MPI_Status status;
+
+        if (!bit[i]) {
+          num_active = 1;
+          continue;
+        }
+
+        switch (state[i]) {
+        case P4EST_BALSORT_ISEND:
+          /* all receives have been merged, all sends have completed:
+           * initiate another send and receive */
+          if (num_sort == 1 && bit[i^1] > bit[i]) {
+            num_active = 1;
+            state[i] = P4EST_BALSORT_SYNC;
+          }
+          proc[i] = i ? rank + bit[i] : rank - bit[i];
+          if (proc[i] >= procrange[i][0] && proc[i] <= procrange[i][1]) {
+            /* prepare the send buffer */
+            ssize_t sz;
+            p4est_quadrant_t nextq = p4est->global_first_position[i ? proc[i] : proc[i] + 1];
+
+            P4EST_ASSERT (nextq.p.which_tree == desc[i].p.which_tree);
+            while (nextq.level > 0 && p4est_quadrant_child_id (&nextq) == 0) {
+              nextq.level--;
+            }
+            sz = p4est_find_lower_bound (&sort_bufs[i], &nextq, 0);
+            if (sz < 0) {
+              sz = sort_bufs[i].elem_count;
+            }
+            if (!i) {
+              sc_array_push_copy (&sort_bufs[i], 0, (size_t) sz, &send_bufs[i]);
+              sc_array_crop (&sort_bufs[i], (size_t) sz, sort_bufs[i].elem_count);
+            }
+            else {
+              sc_array_push_copy (&sort_bufs[i], (size_t) sz, sort_bufs[i].elem_count, &send_bufs[i]);
+              sc_array_crop (&sort_bufs[i], 0, (size_t) sz);
+            }
+            mpiret = MPI_Isend (send_bufs[i].array, send_bufs[i].elem_count * sizeof (p4est_quadrant_t), MPI_BYTE,
+                                proc[i], P4EST_COMM_BALANCE_SORT_SORT, p4est->mpicomm, &sendreq[i]);
+            SC_CHECK_MPI (mpiret);
+            if (p4est->inspect && p4est->inspect->stats) {
+              sc_statistics_accumulate (p4est->inspect->stats, "balance sort send", (double) send_bufs[i].elem_count);
+            }
+            state[i] = P4EST_BALSORT_IPROBE;
+          }
+          else {
+            bit[i] >>= 1;
+          }
+          break;
+        case P4EST_BALSORT_SYNC:
+          if (bit[i ^ 1] <= bit[i]) {
+            num_active = 2;
+            state[i] = P4EST_BALSORT_ISEND;
+          }
+          break;
+        case P4EST_BALSORT_IPROBE:
+          /* a send has been initiated, probe for a matching receive */
+          P4EST_ASSERT (proc[i] >= procrange[i][0] && proc[i] <= procrange[i][1]);
+          if (num_active == 1) {
+            mpiret = MPI_Probe (proc[i], P4EST_COMM_BALANCE_SORT_SORT, p4est->mpicomm,
+                                &status);
+            SC_CHECK_MPI (mpiret);
+            flg = 1;
+          }
+          else {
+            mpiret = MPI_Iprobe (proc[i], P4EST_COMM_BALANCE_SORT_SORT, p4est->mpicomm,
+                                 &flg, &status);
+            SC_CHECK_MPI (mpiret);
+          }
+          if (flg) {
+            p4est_quadrant_t *dest;
+
+            mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
+            SC_CHECK_MPI (mpiret);
+            dest = (p4est_quadrant_t *) sc_array_push_count (&recv_bufs[i], (size_t) (rcount / sizeof (p4est_quadrant_t)));
+            mpiret = MPI_Irecv (dest, rcount, MPI_BYTE, proc[i], P4EST_COMM_BALANCE_SORT_SORT,
+                                p4est->mpicomm, &recvreq[i]);
+            SC_CHECK_MPI (mpiret);
+            if (p4est->inspect && p4est->inspect->stats) {
+              sc_statistics_accumulate (p4est->inspect->stats, "balance sort recv", (double) (rcount / sizeof (p4est_quadrant_t)));
+            }
+            state[i] = P4EST_BALSORT_IRECV;
+          }
+          break;
+        case P4EST_BALSORT_IRECV:
+          /* a recv request has been initiated, wait for it to receive */
+          if (num_active == 1) {
+            mpiret = MPI_Wait (&recvreq[i], MPI_STATUS_IGNORE);
+            SC_CHECK_MPI (mpiret);
+            flg = 1;
+          }
+          else {
+            mpiret = MPI_Test (&recvreq[i], &flg, MPI_STATUS_IGNORE);
+            SC_CHECK_MPI (mpiret);
+          }
+          if (flg) {
+            /* merge sort in the receive */
+            if (num_sort == 2) {
+              /* everything that I have received is for me */
+              t = i ? llt : flt;
+              sc_array_push_copy (&recv_bufs[i], 0, recv_bufs[i].elem_count, &tree_bufs[t - flt]);
+              recv_bufs[i].elem_count = 0;
+            }
+            else {
+              /* what I have received goes to the opposite side */
+              p4est_quadrant_array_merge_reduce (&sort_bufs[i^1], &recv_bufs[i]);
+              recv_bufs[i].elem_count = 0;
+            }
+            state[i] = P4EST_BALSORT_WAIT;
+          }
+          break;
+        case P4EST_BALSORT_WAIT:
+          /* wait for a send to finish */
+          if (num_active == 1) {
+            mpiret = MPI_Wait (&sendreq[i], MPI_STATUS_IGNORE);
+            SC_CHECK_MPI (mpiret);
+            flg = 1;
+          }
+          else {
+            mpiret = MPI_Test (&sendreq[i], &flg, MPI_STATUS_IGNORE);
+            SC_CHECK_MPI (mpiret);
+          }
+          if (flg) {
+            bit[i] >>= 1;
+            sc_array_truncate (&send_bufs[i]);
+            state[i] = P4EST_BALSORT_ISEND;
+          }
+          break;
+        default:
+          SC_ABORT_NOT_REACHED ();
+        }
+      }
+    }
+
+    sc_array_reset (&recv_bufs[1]);
+    sc_array_reset (&recv_bufs[0]);
+    sc_array_reset (&send_bufs[1]);
+    sc_array_reset (&send_bufs[0]);
+  }
+#endif
+  sc_array_reset (&sort_bufs[1]);
+  sc_array_reset (&sort_bufs[0]);
   /* ghost neighbor balance */
   for (t = flt; t <= llt; t++) {
   }
   /* merge and complete */
 
   sc_mempool_destroy (list_alloc);
-  sc_array_destroy (inquads);
-  sc_array_destroy (outquads);
+  for (t = 0; t < num_trees; t++) {
+    sc_array_reset (&tree_bufs[t]);
+  }
+  P4EST_FREE (tree_bufs);
+  for (s = 0; s < nneigh; s++) {
+    sc_array_reset (&neigh_bufs[s]);
+  }
+  P4EST_FREE (neigh_bufs);
   sc_array_destroy (procs);
+  for (t = flt; t <= llt; t++) {
+    sc_array_reset (&(tinfo[t - flt].tnarray));
+  }
   P4EST_FREE (tinfo);
   P4EST_FREE (proc_hash);
   P4EST_FUNC_SHOT (p4est, &snap);
@@ -2011,7 +2552,7 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   P4EST_ASSERT (p4est_is_valid (p4est));
   /* remember input quadrant count; it will not decrease */
   old_gnq = p4est->global_num_quadrants;
-  if (0) {
+  if (1) {
     p4est_balance_sort (p4est, btype, init_fn, replace_fn);
   }
   p4est_balance_ext_dirty (p4est, btype, init_fn, replace_fn);
