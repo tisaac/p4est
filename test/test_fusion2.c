@@ -578,8 +578,8 @@ main (int argc, char **argv)
   //conn = p4est_connectivity_new_moebius ();
   conn = p4est_connectivity_new_unitsquare ();
 #else
-  //conn = p8est_connectivity_new_rotcubes ();
-  conn = p8est_connectivity_new_unitcube ();
+  conn = p8est_connectivity_new_rotcubes ();
+  //conn = p8est_connectivity_new_unitcube ();
 #endif
 
   p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */ ,

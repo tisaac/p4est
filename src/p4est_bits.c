@@ -1447,9 +1447,9 @@ p4est_quadrant_utransform (const p4est_quadrant_t * q,
                            const int utransform[], int reverse)
 {
   int                 i, j;
-  p4est_qcoord_t      h;
-  p4est_qcoord_t      c[2][3];
-  p4est_qcoord_t      f[2][3];
+  int64_t             h;
+  int64_t             c[2][3];
+  int64_t             f[2][3];
 
   if (q->level == P4EST_MAXLEVEL) {
     P4EST_ASSERT (p4est_quadrant_is_node (q, 0));
@@ -1459,13 +1459,13 @@ p4est_quadrant_utransform (const p4est_quadrant_t * q,
   }
   h = P4EST_QUADRANT_LEN (q->level);
   P4EST_ASSERT (q != r);
-  c[0][0] = q->x;
-  c[1][0] = q->x + h;
-  c[0][1] = q->y;
-  c[1][1] = q->y + h;
+  c[0][0] = (int64_t) q->x;
+  c[1][0] = (int64_t) q->x + h;
+  c[0][1] = (int64_t) q->y;
+  c[1][1] = (int64_t) q->y + h;
 #ifdef P4_TO_P8
-  c[0][2] = q->z;
-  c[1][2] = q->z + h;
+  c[0][2] = (int64_t) q->z;
+  c[1][2] = (int64_t) q->z + h;
 #endif
   if (!reverse) {
     for (i = 0; i < 2; i++) {
@@ -1488,10 +1488,10 @@ p4est_quadrant_utransform (const p4est_quadrant_t * q,
       }
     }
   }
-  r->x = SC_MIN (f[0][0], f[1][0]);
-  r->y = SC_MIN (f[0][1], f[1][1]);
+  r->x = (p4est_qcoord_t) SC_MIN (f[0][0], f[1][0]);
+  r->y = (p4est_qcoord_t) SC_MIN (f[0][1], f[1][1]);
 #ifdef P4_TO_P8
-  r->z = SC_MIN (f[0][2], f[1][2]);
+  r->z = (p4est_qcoord_t) SC_MIN (f[0][2], f[1][2]);
 #endif
   r->level = q->level;
 #ifdef P4EST_ENABLE_DEBUG

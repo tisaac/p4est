@@ -30,6 +30,7 @@
 #include <p8est_ghost.h>
 #include <p8est_io.h>
 #include <p8est_search.h>
+#include <p8est_balance.h>
 #else
 #include <p4est_algorithms.h>
 #include <p4est_bits.h>
@@ -38,6 +39,7 @@
 #include <p4est_ghost.h>
 #include <p4est_io.h>
 #include <p4est_search.h>
+#include <p4est_balance.h>
 #endif /* !P4_TO_P8 */
 #include <sc_io.h>
 #include <sc_notify.h>
@@ -1287,7 +1289,7 @@ typedef struct
 }
 p4est_tree_neigh_info_t;
 
-const int p4est_insul_lookup[P4EST_INSUL] = {
+const static int p4est_insul_lookup[P4EST_INSUL] = {
 #ifndef P4_TO_P8
   0,  2,  1,  0, -1,  1,  2,  3,  3,
 #else
@@ -1296,7 +1298,7 @@ const int p4est_insul_lookup[P4EST_INSUL] = {
   4,  2,  5,  6,  5,  7,  6,  3,  7,
 #endif
 };
-const int p4est_face_to_insul[P4EST_FACES] = {
+const static int p4est_face_to_insul[P4EST_FACES] = {
 #ifndef P4_TO_P8
   3,  5,  1,  7,
 #else
@@ -1304,9 +1306,9 @@ const int p4est_face_to_insul[P4EST_FACES] = {
 #endif
 };
 #ifdef P4_TO_P8
-const int p8est_edge_to_insul[P8EST_EDGES] = { 1, 7, 19, 25, 3, 5, 21, 23, 9, 11, 15, 17 };
+const static int p8est_edge_to_insul[P8EST_EDGES] = { 1, 7, 19, 25, 3, 5, 21, 23, 9, 11, 15, 17 };
 #endif
-const int p4est_corner_to_insul[P4EST_CHILDREN] = {
+const static int p4est_corner_to_insul[P4EST_CHILDREN] = {
 #ifndef P4_TO_P8
   0, 2, 6, 8,
 #else
@@ -1778,6 +1780,24 @@ sc_array_push_copy (sc_array_t *array, size_t a_start, size_t a_end, sc_array_t 
   }
 }
 
+static void
+sc_array_push_cut (sc_array_t *array, size_t a_start, size_t a_end, sc_array_t *result)
+{
+  P4EST_ASSERT (result && array != result);
+  P4EST_ASSERT (result->elem_size == array->elem_size);
+  P4EST_ASSERT (a_end >= a_start);
+
+  if (a_end > a_start) {
+    char *dest = sc_array_push_count (result, a_end - a_start);
+
+    memcpy (dest, sc_array_index (array, a_start), (a_end - a_start) * array->elem_size);
+    if (a_end < array->elem_count) {
+      memmove (sc_array_index (array, a_start), sc_array_index (array, a_end), (array->elem_count - a_end) * array->elem_size);
+    }
+    array->elem_count -= (a_end - a_start);
+  }
+}
+
 #if 0
 static void
 p4est_quadrant_compare_insertion (const void *key, const void *memb)
@@ -2134,7 +2154,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     p4est_quadrant_t    root;
     size_t              ancstart, ancend, selfstart, selfend;
     sc_array_t         *inquads = &tree_bufs[t - flt];
-    int                 thisminlevel = 0;
 
     tree = p4est_tree_array_index (p4est->trees, t);
     tquadrants = &tree->quadrants;
@@ -2217,7 +2236,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     if (pre_adapt_flags) {
       p4est_quadrant_array_insert_endpoints (inquads, &root, &tree->first_desc, &tree->last_desc);
     }
-    p4est_balance_kernel (inquads, &root, thisminlevel, bound, qpool,
+    p4est_balance_kernel (inquads, NULL, root.level, bound, qpool,
                           list_alloc, NULL, NULL, NULL, NULL, NULL);
 
     treecount = inquads->elem_count;
@@ -2240,24 +2259,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
       if (sz < 0) {
         sz = inquads->elem_count;
       }
-#ifdef P4EST_ENABLE_DEBUG
-      {
-        p4est_quadrant_t *q = (sz == inquads->elem_count) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz);
-        p4est_quadrant_t *p = (sz == 0) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz - 1);
-        if (q) {
-          p4est_quadrant_t fd;
-
-          p4est_quadrant_first_descendant (q, &fd, P4EST_QMAXLEVEL);
-          P4EST_ASSERT (p4est_quadrant_compare (&tree->first_desc, &fd) <= 0);
-        }
-        if (p) {
-          p4est_quadrant_t fd;
-
-          p4est_quadrant_first_descendant (p, &fd, P4EST_QMAXLEVEL);
-          P4EST_ASSERT (p4est_quadrant_compare (&fd, &tree->first_desc) < 0);
-        }
-      }
-#endif
       selfstart = sz;
 
       p4est_quadrant_ancestor (&desc[0], minlevel[0], &anc);
@@ -2269,7 +2270,8 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
       ancstart = sz;
 
       P4EST_ASSERT (ancstart <= selfstart);
-      sc_array_push_copy (inquads, ancstart, selfstart, &sort_bufs[0]);
+      sc_array_push_cut (inquads, ancstart, selfstart, &sort_bufs[0]);
+      selfstart = ancstart;
     }
     else {
       selfstart = 0;
@@ -2285,24 +2287,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
       else {
         sz++;
       }
-#ifdef P4EST_ENABLE_DEBUG
-      {
-        p4est_quadrant_t *q = (sz == inquads->elem_count) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz);
-        p4est_quadrant_t *p = (sz == 0) ? NULL : p4est_quadrant_array_index (inquads, (size_t) sz - 1);
-        if (q) {
-          p4est_quadrant_t fd;
-
-          p4est_quadrant_first_descendant (q, &fd, P4EST_QMAXLEVEL);
-          P4EST_ASSERT (p4est_quadrant_compare (&tree->last_desc, &fd) < 0);
-        }
-        if (p) {
-          p4est_quadrant_t fd;
-
-          p4est_quadrant_first_descendant (p, &fd, P4EST_QMAXLEVEL);
-          P4EST_ASSERT (p4est_quadrant_compare (&fd, &tree->last_desc) <= 0);
-        }
-      }
-#endif
       selfend = sz;
 
       p4est_quadrant_ancestor (&desc[1], minlevel[1], &anc);
@@ -2315,13 +2299,16 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
         sz++;
       }
       ancend = sz;
-      sc_array_push_copy (inquads, selfend, ancend, &sort_bufs[1]);
+      sc_array_push_cut (inquads, selfend, ancend, &sort_bufs[1]);
     }
     else {
       selfend = inquads->elem_count;
     }
+#if 0
     sc_array_crop (inquads, selfstart, selfend);
+#endif
   }
+  sc_mempool_destroy (list_alloc);
 
 #if P4EST_ENABLE_MPI
   if (p4est->inspect && p4est->inspect->stats) {
@@ -2334,11 +2321,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   }
   /* block balance parallel sort */
   if (num_sort > 0) {
-    int start, lim;
-    int orig[2];
-    int me[2];
-    int rem[2];
-    int i, n[2];
+    int i;
     MPI_Request sendreq[2];
     MPI_Request recvreq[2];
     int mpiret;
@@ -2346,8 +2329,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     int proc[2] = {-1, -1};
     int state[2];
     sc_array_t recv_bufs[2], send_bufs[2];
-    size_t lastoff[2], lastsplit[2];
-    p4est_quadrant_t lastpos[2];
     int num_active;
 
     sc_array_init (&recv_bufs[0], sizeof (p4est_quadrant_t));
@@ -2402,12 +2383,10 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
               sz = sort_bufs[i].elem_count;
             }
             if (!i) {
-              sc_array_push_copy (&sort_bufs[i], 0, (size_t) sz, &send_bufs[i]);
-              sc_array_crop (&sort_bufs[i], (size_t) sz, sort_bufs[i].elem_count);
+              sc_array_push_cut (&sort_bufs[i], 0, (size_t) sz, &send_bufs[i]);
             }
             else {
-              sc_array_push_copy (&sort_bufs[i], (size_t) sz, sort_bufs[i].elem_count, &send_bufs[i]);
-              sc_array_crop (&sort_bufs[i], 0, (size_t) sz);
+              sc_array_push_cut (&sort_bufs[i], (size_t) sz, sort_bufs[i].elem_count, &send_bufs[i]);
             }
             mpiret = MPI_Isend (send_bufs[i].array, send_bufs[i].elem_count * sizeof (p4est_quadrant_t), MPI_BYTE,
                                 proc[i], P4EST_COMM_BALANCE_SORT_SORT, p4est->mpicomm, &sendreq[i]);
@@ -2471,15 +2450,13 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
             /* merge sort in the receive */
             if (num_sort == 2) {
               /* everything that I have received is for me */
-              t = i ? llt : flt;
-              sc_array_push_copy (&recv_bufs[i], 0, recv_bufs[i].elem_count, &tree_bufs[t - flt]);
-              recv_bufs[i].elem_count = 0;
+              p4est_quadrant_array_merge_reduce (&sort_bufs[i], &recv_bufs[i]);
             }
             else {
               /* what I have received goes to the opposite side */
               p4est_quadrant_array_merge_reduce (&sort_bufs[i^1], &recv_bufs[i]);
-              recv_bufs[i].elem_count = 0;
             }
+            sc_array_truncate (&recv_bufs[i]);
             state[i] = P4EST_BALSORT_WAIT;
           }
           break;
@@ -2506,6 +2483,132 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
       }
     }
 
+    if (num_sort == 1) {
+      p4est_quadrant_array_merge_reduce (&sort_bufs[0], &sort_bufs[1]);
+      sc_array_truncate (&sort_bufs[1]);
+    }
+
+    /* combine sort results back into the original trees */
+    for (i = 0; i < num_sort; i++) {
+      p4est_quadrant_t anc;
+      size_t nq, s;
+      sc_array_t seeds;
+      sc_array_t newquads;
+
+      p4est_quadrant_ancestor (&desc[i], minlevel[i], &anc);
+
+      sc_array_init (&seeds, sizeof (p4est_quadrant_t));
+      sc_array_init (&newquads, sizeof (p4est_quadrant_t));
+      nq = sort_bufs[i].elem_count;
+      for (s = 0; s < nq; s++) {
+        p4est_quadrant_t *q = (p4est_quadrant_t *) sc_array_index (&sort_bufs[i], s);
+        p4est_quadrant_t *prev = s ? (p4est_quadrant_t *) sc_array_index (&sort_bufs[i], s - 1) : NULL;
+        p4est_quadrant_t *next = (s < nq - 1) ? (p4est_quadrant_t *) sc_array_index (&sort_bufs[i], s + 1) : NULL;
+        p4est_quadrant_t lb, ub;
+        int32_t touch;
+        int32_t mask = 1;
+
+        P4EST_ASSERT (p4est_quadrant_is_ancestor (&anc, q));
+        if (prev) {
+          p4est_quadrant_t a, qstop;
+          int qid, pid, idxor, dir, qstopid;
+
+          p4est_nearest_common_ancestor (q, prev, &a);
+          P4EST_ASSERT (a.level < q->level && a.level < prev->level);
+          qid = p4est_quadrant_ancestor_id (q, a.level + 1);
+          pid = p4est_quadrant_ancestor_id (prev, a.level + 1);
+          P4EST_ASSERT (qid > pid);
+          idxor = qid ^ pid;
+          dir = SC_LOG2_8 (idxor);
+          P4EST_ASSERT (dir >= 0);
+          qstopid = (qid >> dir) << dir;
+          p4est_quadrant_child (&a, &qstop, qstopid);
+          p4est_quadrant_first_descendant (&qstop, &lb, P4EST_QMAXLEVEL);
+        }
+        if (next) {
+          p4est_quadrant_t a, qstop;
+          int qid, nid, idxor, dir, qstopid;
+
+          p4est_nearest_common_ancestor (q, next, &a);
+          P4EST_ASSERT (a.level < q->level && a.level < next->level);
+          qid = p4est_quadrant_ancestor_id (q, a.level + 1);
+          nid = p4est_quadrant_ancestor_id (next, a.level + 1);
+          P4EST_ASSERT (nid > qid);
+          idxor = qid ^ nid;
+          dir = SC_LOG2_8 (idxor);
+          P4EST_ASSERT (dir >= 0);
+          qstopid = ((nid >> dir) << dir) - 1;
+          p4est_quadrant_child (&a, &qstop, qstopid);
+          p4est_quadrant_last_descendant (&qstop, &ub, P4EST_QMAXLEVEL);
+        }
+        touch = p4est_find_range_boundaries (prev ? &lb : NULL, next ? &ub : NULL,
+                                             anc.level, NULL,
+#ifdef P4_TO_P8
+                                             NULL,
+#endif
+                                             NULL);
+        {
+          int f;
+
+          for (f = 0; f < P4EST_FACES; f++, mask <<= 1) {
+            p4est_quadrant_t n;
+            int split;
+
+            if (!(touch & mask)) {
+              continue;
+            }
+            p4est_quadrant_face_neighbor (&anc, f, &n);
+            split = p4est_balance_seeds (q, &n, btype, &seeds);
+            if (split) {
+              sc_array_push_cut (&seeds, 0, seeds.elem_count, &newquads);
+            }
+          }
+        }
+#ifdef P4_TO_P8
+        {
+          int e;
+
+          for (e = 0; e < P8EST_EDGES; e++, mask <<= 1) {
+            p4est_quadrant_t n;
+            int split;
+
+            if (!(touch & mask)) {
+              continue;
+            }
+            p8est_quadrant_edge_neighbor (&anc, e, &n);
+            split = p4est_balance_seeds (q, &n, btype, &seeds);
+            if (split) {
+              sc_array_push_cut (&seeds, 0, seeds.elem_count, &newquads);
+            }
+          }
+        }
+#endif
+        {
+          int c;
+
+          for (c = 0; c < P4EST_CHILDREN; c++, mask <<= 1) {
+            p4est_quadrant_t n;
+            int split;
+
+            if (!(touch & mask)) {
+              continue;
+            }
+            p4est_quadrant_corner_neighbor (&anc, c, &n);
+            split = p4est_balance_seeds (q, &n, btype, &seeds);
+            if (split) {
+              sc_array_push_cut (&seeds, 0, seeds.elem_count, &newquads);
+            }
+          }
+        }
+      }
+      sc_array_sort (&newquads, p4est_quadrant_compare);
+      p4est_quadrant_array_reduce (&newquads, NULL, NULL);
+      p4est_quadrant_array_merge_reduce (&sort_bufs[i], &newquads);
+      p4est_quadrant_array_merge_reduce (&tree_bufs[desc[i].p.which_tree - flt], &sort_bufs[i]);
+      sc_array_reset (&seeds);
+      sc_array_reset (&newquads);
+    }
+
     sc_array_reset (&recv_bufs[1]);
     sc_array_reset (&recv_bufs[0]);
     sc_array_reset (&send_bufs[1]);
@@ -2519,7 +2622,6 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   }
   /* merge and complete */
 
-  sc_mempool_destroy (list_alloc);
   for (t = 0; t < num_trees; t++) {
     sc_array_reset (&tree_bufs[t]);
   }
