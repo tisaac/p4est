@@ -2793,7 +2793,106 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
     }
     sc_array_reset (&tform_quads);
   }
-  /* merge and complete */
+  /* exchange, merge and complete */
+#ifdef P4EST_ENABLE_MPI
+  if (num_trees) {
+    size_t n;
+    MPI_Request *req;
+    sc_array_t *recv_buf = NULL;
+    int me = proc_hash[rank];
+    int mpiret;
+
+    P4EST_ASSERT (me > 0 && me <= nneigh);
+
+    req = P4EST_ALLOC (MPI_Request, nneigh);
+
+    req[me - 1] = MPI_REQUEST_NULL;
+
+    recv_buf = &neigh_bufs[me - 1];
+    for (n = 0; n < nneigh; n++) {
+      int p = *((int *) sc_array_index (procs, n));
+      sc_array_t *buf = &neigh_bufs[n];
+
+      if (p == rank) {
+        P4EST_ASSERT (n == me - 1);
+        continue;
+      }
+      mpiret = MPI_Isend (buf->array, buf->elem_count * sizeof (p4est_quadrant_t), MPI_BYTE,
+                          p, P4EST_COMM_BALANCE_SORT_NEIGH, p4est->mpicomm, &req[n]);
+      SC_CHECK_MPI (mpiret);
+    }
+    for (n = 0; n < nneigh - 1; n++) {
+      MPI_Status status;
+      int rcount;
+      int p;
+      p4est_quadrant_t *q;
+
+      mpiret = MPI_Probe (MPI_ANY_SOURCE, P4EST_COMM_BALANCE_SORT_NEIGH,
+                          p4est->mpicomm, &status);
+      SC_CHECK_MPI (mpiret);
+      p = status.MPI_SOURCE;
+      P4EST_ASSERT (proc_hash[p] > 0);
+      mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
+      P4EST_ASSERT ((rcount % sizeof (p4est_quadrant_t)) == 0);
+      q = (p4est_quadrant_t *) sc_array_push_count (recv_buf, rcount / sizeof (p4est_quadrant_t));
+      mpiret = MPI_Recv (q, rcount, MPI_BYTE, p, P4EST_COMM_BALANCE_SORT_NEIGH,
+                         p4est->mpicomm, MPI_STATUS_IGNORE);
+      SC_CHECK_MPI (mpiret);
+    }
+    mpiret = MPI_Waitall ((int) nneigh, req, MPI_STATUSES_IGNORE);
+    SC_CHECK_MPI (mpiret);
+    P4EST_FREE (req);
+
+    sc_array_sort (recv_buf, p4est_quadrant_compare_piggy);
+#ifdef P4EST_ENABLE_DEBUG
+    if (recv_buf->elem_count) {
+      p4est_quadrant_t *first = p4est_quadrant_array_index (recv_buf, 0);
+      p4est_quadrant_t *last = p4est_quadrant_array_index (recv_buf, recv_buf->elem_count - 1);
+      p4est_quadrant_t *gf = &p4est->global_first_position[rank];
+      p4est_quadrant_t *gn = &p4est->global_first_position[rank + 1];
+
+      P4EST_ASSERT (first->p.which_tree >= gf->p.which_tree);
+      P4EST_ASSERT (last->p.which_tree <= gn->p.which_tree);
+      if (first->p.which_tree == gf->p.which_tree) {
+        P4EST_ASSERT (p4est_quadrant_compare (gf, first) < 0
+                      ||
+                      (gf->x == first->x && gf->y == first->y &&
+#ifdef P4_TO_P8
+                       gf->z == first->z &&
+#endif
+                       1));
+
+      }
+      if (last->p.which_tree == gn->p.which_tree) {
+        P4EST_ASSERT (p4est_quadrant_compare (last, gn) < 0);
+      }
+    }
+#endif
+    {
+      size_t s, n;
+
+      n = recv_buf->elem_count;
+      for (s = 0; s < n;) {
+        size_t z;
+        p4est_quadrant_t *q = p4est_quadrant_array_index (recv_buf, s);
+        p4est_topidx_t t = q->p.which_tree;
+        sc_array_t view;
+
+        for (z = s + 1; z < n; z++) {
+          p4est_quadrant_t *r = p4est_quadrant_array_index (recv_buf, z);
+
+          if (r->p.which_tree != t) {
+            break;
+          }
+        }
+        sc_array_init_view (&view, recv_buf, s, z - 1 - s);
+        p4est_quadrant_array_reduce (&view, NULL, NULL);
+        p4est_quadrant_array_merge_reduce (&tree_bufs[t - flt], &view);
+        s = z;
+      }
+    }
+  }
+#endif
 
   for (t = 0; t < num_trees; t++) {
     sc_array_reset (&tree_bufs[t]);
