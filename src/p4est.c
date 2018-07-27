@@ -1930,6 +1930,77 @@ p4est_quadrant_array_merge_reduce (sc_array_t *A, sc_array_t *B)
   P4EST_ASSERT (p4est_quadrant_array_is_reduced (A));
 }
 
+/* divide up a sorted list of quadrants from a given tree between the
+ * neighbor processes */
+static void
+p4est_balance_sort_divide (p4est_t *p4est, sc_array_t *procs, sc_array_t *proc_bufs,
+                           p4est_topidx_t which_tree, sc_array_t *tquads, int skip_self)
+{
+  size_t n, nneigh = procs->elem_count;
+
+  for (n = 0; n < nneigh; n++) {
+    int p = *((int *) sc_array_index (procs, n));
+    p4est_quadrant_t fp, np, lb, ub;
+    p4est_quadrant_t *nq;
+    ssize_t sz;
+    size_t qstart, qend;
+    size_t nbuf, s;
+
+    if (p == p4est->mpirank && skip_self) {
+      continue;
+    }
+
+    fp = p4est->global_first_position[p];
+    np = p4est->global_first_position[p+1];
+    if (np.p.which_tree < which_tree || fp.p.which_tree > which_tree) {
+      continue;
+    }
+    if (fp.p.which_tree == which_tree) {
+      lb = fp;
+
+      while (lb.level && !p4est_quadrant_child_id(&lb)) {
+        lb.level--;
+      }
+      sz = p4est_find_lower_bound (tquads, &lb, 0);
+      if (sz < 0) {
+        sz = tquads->elem_count;
+      }
+      qstart = sz;
+    }
+    else {
+      qstart = 0;
+    }
+
+    if (np.p.which_tree > which_tree) {
+      qend = tquads->elem_count;
+    }
+    else {
+      ub = np;
+
+      while (ub.level && !p4est_quadrant_child_id (&ub)) {
+        ub.level--;
+      }
+      sz = p4est_find_lower_bound (tquads, &ub, 0);
+      if (sz < 0) {
+        sz = tquads->elem_count;
+      }
+      qend = sz;
+    }
+    P4EST_ASSERT (qend >= qstart);
+    if (qend > qstart) {
+      nbuf = proc_bufs[n].elem_count;
+      sc_array_push_copy (tquads, qstart, qend, &proc_bufs[n]);
+      nq = p4est_quadrant_array_index (&proc_bufs[n], nbuf);
+      for (s = 0; s < qend - qstart; s++) {
+        nq[s].pad8 = 0;
+        nq[s].pad16 = 0;
+        nq[s].p.user_data = NULL;
+        nq[s].p.which_tree = which_tree;
+      }
+    }
+  }
+}
+
 static void
 p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
                     p4est_init_t init_fn, p4est_replace_t replace_fn)
@@ -2618,7 +2689,109 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   sc_array_reset (&sort_bufs[1]);
   sc_array_reset (&sort_bufs[0]);
   /* ghost neighbor balance */
-  for (t = flt; t <= llt; t++) {
+  for (t = 0; t < num_trees; t++) {
+    int i, j, k, l;
+#ifdef P4_TO_P8
+    int kstart = 0, kend = 3;
+#else
+    int kstart = 1, kend = 2;
+#endif
+    sc_array_t *tquads = &tree_bufs[t];
+    sc_array_t orig_view;
+    sc_array_t tform_quads;
+    p4est_qcoord_t H = P4EST_ROOT_LEN;
+    p4est_tree_neigh_info_t *info = &tinfo[t];
+    p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, t + flt);
+
+    sc_array_init (&tform_quads, sizeof (p4est_quadrant_t));
+    for (k = kstart, l = 0; k < kend; k++) {
+      for (j = 0; j < 3; j++) {
+        for (i = 0; i < 3; i++, l++) {
+          p4est_quadrant_t insul, ub;
+          size_t sz;
+          size_t qstart, qend;
+
+          insul.x = (i - 1) * H;
+          insul.y = (j - 1) * H;
+#ifdef P4_TO_P8
+          insul.z = (j - 1) * H;
+#endif
+          insul.level = 0;
+          p4est_quadrant_last_descendant (&insul, &ub, P4EST_QMAXLEVEL);
+          sz = p4est_find_lower_bound (tquads, &insul, 0);
+          if (sz < 0) {
+            sz = tquads->elem_count;
+          }
+          qstart = (size_t) sz;
+          sz = p4est_find_higher_bound (tquads, &ub, 0);
+          if (sz < 0) {
+            sz = 0;
+          }
+          else {
+            sz++;
+          }
+          qend = (size_t) sz;
+          if (qend <= qstart) {
+            continue;
+          }
+          sc_array_init_view (&orig_view, tquads, qstart, qend - qstart);
+          if (l == P4EST_INSUL / 2) {
+            p4est_balance_sort_divide (p4est, procs, neigh_bufs, t + flt, &orig_view, 1);
+          }
+          else {
+            size_t z, sq;
+            size_t no = orig_view.elem_count;
+
+            for (z = info->offset[l]; z < info->offset[l + 1]; z++) {
+              p4est_tree_neigh_t *tn = (p4est_tree_neigh_t *) sc_array_index (&info->tnarray, z);
+              p4est_quadrant_t *oq = (p4est_quadrant_t *) sc_array_index (&orig_view, 0);
+              p4est_quadrant_t *trq;
+
+              trq = (p4est_quadrant_t *) sc_array_push_count (&tform_quads, no);
+
+              for (sq = 0; sq < no; sq++) {
+                p4est_quadrant_t temp;
+                p4est_quadrant_utransform (&oq[sq], &temp, &(tn->u[0]), 0);
+
+                p4est_quadrant_sibling (&temp, &trq[sq], 0);
+              }
+              sc_array_sort (&tform_quads, p4est_quadrant_compare);
+              p4est_balance_sort_divide (p4est, procs, neigh_bufs, tn->nt, &tform_quads, 0);
+              sc_array_truncate (&tform_quads);
+            }
+          }
+        }
+      }
+    }
+    {
+      p4est_quadrant_t fd = tree->first_desc;
+      ssize_t sz;
+      size_t qstart, qend;
+
+      while (fd.level > 0 && !p4est_quadrant_child_id (&fd)) {
+        fd.level--;
+      }
+      sz = p4est_find_lower_bound (tquads, &fd, 0);
+      if (sz < 0) {
+        sz = tquads->elem_count;
+      }
+      qstart = sz;
+      sz = p4est_find_higher_bound (tquads, &tree->last_desc, 0);
+      if (sz < 0) {
+        sz = 0;
+      }
+      else {
+        sz++;
+      }
+      qend = sz;
+      if (qend > qstart) {
+        sc_array_crop (tquads, qstart, qend);
+      }
+      else {
+        sc_array_truncate (tquads);
+      }
+    }
+    sc_array_reset (&tform_quads);
   }
   /* merge and complete */
 
