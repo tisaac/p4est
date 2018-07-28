@@ -1455,7 +1455,6 @@ int
 p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
 {
   size_t s, n = tquadrants->elem_count;
-  p4est_quadrant_t *prev = NULL;
   p4est_quadrant_t  prevp;
 
   if (!sc_array_is_sorted (tquadrants, p4est_quadrant_compare)) {
@@ -1465,6 +1464,9 @@ p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
     p4est_quadrant_t *q = p4est_quadrant_array_index (tquadrants, s);
     p4est_quadrant_t qp;
 
+    if (!q->level) {
+      return 0;
+    }
     if (p4est_quadrant_child_id (q) != 0) {
       return 0;
     }
@@ -1474,7 +1476,6 @@ p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
         return 0;
       }
     }
-    prev = q;
     prevp = qp;
   }
   return 1;
@@ -1903,7 +1904,7 @@ p4est_balance_kernel (sc_array_t * inlist,
   P4EST_ASSERT (p4est_quadrant_array_is_reduced (inlist));
 }
 
-static void
+void
 p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant_t *first_desc, p4est_quadrant_t *last_desc,
                        sc_array_t *out)
 {
@@ -2180,6 +2181,119 @@ p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, const i
   }
 }
 
+void
+p4est_subtree_replace (p4est_t *p4est, p4est_topidx_t which_tree,
+                       sc_array_t *newquads, p4est_init_t init_fn,
+                       p4est_replace_t replace_fn)
+{
+  p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, which_tree);
+  sc_array_t *tquadrants = &tree->quadrants;
+  size_t iz, jz, jzstart = 0, jzend, ocount, tcount = tquadrants->elem_count;
+  p4est_quadrant_t *q, *p;
+  p4est_quadrant_t tempq;
+  int maxlevel;
+
+  ocount = newquads->elem_count;
+
+  iz = 0;                       /* tquadrants */
+  jz = 0;                       /* newquads */
+  maxlevel = 0;
+
+  /* initialize quadrants in newquads */
+  while (iz < tcount && jz < ocount) {
+    q = p4est_quadrant_array_index (tquadrants, iz);
+    p = p4est_quadrant_array_index (newquads, jz);
+
+    if (p4est_quadrant_is_ancestor (p, q)) {
+      int                 k;
+      /* This only happens if there was pre-coarsening */
+      P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
+      P4EST_ASSERT (p4est_quadrant_is_familyv (q));
+      P4EST_ASSERT (p4est_quadrant_is_parent (p, q));
+      tree->quadrants_per_level[q->level] -= P4EST_CHILDREN;
+      ++tree->quadrants_per_level[p->level];
+      maxlevel = SC_MAX (maxlevel, p->level);
+      p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
+      if (replace_fn) {
+        p4est_quadrant_t   *famp[P4EST_CHILDREN];
+
+        for (k = 0; k < P4EST_CHILDREN; k++) {
+          famp[k] = &q[k];
+        }
+        replace_fn (p4est, which_tree, 1, &p, P4EST_CHILDREN, famp);
+      }
+      for (k = 0; k < P4EST_CHILDREN; k++) {
+        p4est_quadrant_free_data (p4est, &q[k]);
+      }
+      iz += P4EST_CHILDREN;
+      jz++;
+      continue;
+    }
+
+    /* watch out for gaps in tquadrants */
+    while (p4est_quadrant_compare (p, q) < 0) {
+      P4EST_ASSERT (!p4est_quadrant_is_ancestor (p, q));
+      maxlevel = SC_MAX (maxlevel, p->level);
+      ++tree->quadrants_per_level[p->level];
+      p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
+      jz++;
+      P4EST_ASSERT (jz < ocount);
+      p = p4est_quadrant_array_index (newquads, jz);
+    }
+
+    /* watchout out for tquadrants that have been split */
+    if (q->level < p->level) {
+      P4EST_ASSERT (p4est_quadrant_is_ancestor (q, p));
+      /* reset q */
+      --tree->quadrants_per_level[q->level];
+      if (replace_fn == NULL) {
+        p4est_quadrant_free_data (p4est, q);
+      }
+      else {
+        tempq = *q;
+        jzstart = jz;
+      }
+      while (jz < ocount && p4est_quadrant_is_ancestor (q, p)) {
+        maxlevel = SC_MAX (maxlevel, p->level);
+        ++tree->quadrants_per_level[p->level];
+        p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
+        if (++jz < ocount) {
+          p = p4est_quadrant_array_index (newquads, jz);
+        }
+      }
+      if (replace_fn != NULL) {
+        jzend = jz;
+        p4est_balance_replace_recursive (p4est, which_tree,
+                                         newquads, jzstart, jzend, &tempq,
+                                         init_fn, replace_fn);
+      }
+      iz++;
+    }
+    else {
+      P4EST_ASSERT (p4est_quadrant_is_equal (q, p));
+      maxlevel = SC_MAX (maxlevel, q->level);
+      p->p.user_data = q->p.user_data;
+      iz++;
+      jz++;
+    }
+  }
+
+  P4EST_ASSERT (iz == tcount);
+
+  /* initialize new quadrants after last tquadrant */
+  for (; jz < ocount; jz++) {
+    p = p4est_quadrant_array_index (newquads, jz);
+    maxlevel = SC_MAX (maxlevel, p->level);
+    ++tree->quadrants_per_level[p->level];
+    p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
+  }
+
+  /* resize tquadrants and copy */
+  sc_array_resize (tquadrants, ocount);
+  memcpy (tquadrants->array, newquads->array, newquads->elem_size * ocount);
+  tree->maxlevel = maxlevel;
+}
+
 static void
 p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
                            const int8_t * pre_adapt_flags,
@@ -2189,7 +2303,6 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
   p4est_tree_t       *tree;
   sc_array_t         *tquadrants;
   int                 bound;
-  int8_t              maxlevel;
   sc_mempool_t       *qpool;
 #ifdef P4EST_ENABLE_DEBUG
   size_t              data_pool_size;
@@ -2197,11 +2310,10 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
   size_t              tcount;
   size_t              count_already_inlist, count_already_outlist;
   size_t              count_ancestor_inlist;
-  p4est_quadrant_t   *q, *p;
   sc_mempool_t       *list_alloc;
   sc_array_t         *inlist, *outlist;
-  size_t              iz, jz, jzstart = 0, jzend, ocount;
-  p4est_quadrant_t    tempq, root;
+  size_t              ocount;
+  p4est_quadrant_t    root;
 
   P4EST_ASSERT (which_tree >= p4est->first_local_tree);
   P4EST_ASSERT (which_tree <= p4est->last_local_tree);
@@ -2275,105 +2387,7 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
 
   ocount = outlist->elem_count;
 
-  iz = 0;                       /* tquadrants */
-  jz = 0;                       /* outlist */
-  maxlevel = 0;
-
-  /* initialize quadrants in outlist */
-  while (iz < tcount && jz < ocount) {
-    q = p4est_quadrant_array_index (tquadrants, iz);
-    p = p4est_quadrant_array_index (outlist, jz);
-
-    if (p4est_quadrant_is_ancestor (p, q)) {
-      int                 k;
-      /* This only happens if there was pre-coarsening */
-      P4EST_ASSERT (pre_adapt_flags
-                    && pre_adapt_flags[iz] == P4EST_FUSED_COARSEN);
-      P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
-      P4EST_ASSERT (p4est_quadrant_is_familyv (q));
-      P4EST_ASSERT (p4est_quadrant_is_parent (p, q));
-      tree->quadrants_per_level[q->level] -= P4EST_CHILDREN;
-      ++tree->quadrants_per_level[p->level];
-      maxlevel = SC_MAX (maxlevel, p->level);
-      p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
-      if (replace_fn) {
-        p4est_quadrant_t   *famp[P4EST_CHILDREN];
-
-        for (k = 0; k < P4EST_CHILDREN; k++) {
-          famp[k] = &q[k];
-        }
-        replace_fn (p4est, which_tree, 1, &p, P4EST_CHILDREN, famp);
-      }
-      for (k = 0; k < P4EST_CHILDREN; k++) {
-        p4est_quadrant_free_data (p4est, &q[k]);
-      }
-      iz += P4EST_CHILDREN;
-      jz++;
-      continue;
-    }
-
-    /* watch out for gaps in tquadrants */
-    while (p4est_quadrant_compare (p, q) < 0) {
-      P4EST_ASSERT (!p4est_quadrant_is_ancestor (p, q));
-      maxlevel = SC_MAX (maxlevel, p->level);
-      ++tree->quadrants_per_level[p->level];
-      p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
-      jz++;
-      P4EST_ASSERT (jz < ocount);
-      p = p4est_quadrant_array_index (outlist, jz);
-    }
-
-    /* watchout out for tquadrants that have been split */
-    if (q->level < p->level) {
-      P4EST_ASSERT (p4est_quadrant_is_ancestor (q, p));
-      /* reset q */
-      --tree->quadrants_per_level[q->level];
-      if (replace_fn == NULL) {
-        p4est_quadrant_free_data (p4est, q);
-      }
-      else {
-        tempq = *q;
-        jzstart = jz;
-      }
-      while (jz < ocount && p4est_quadrant_is_ancestor (q, p)) {
-        maxlevel = SC_MAX (maxlevel, p->level);
-        ++tree->quadrants_per_level[p->level];
-        p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
-        if (++jz < ocount) {
-          p = p4est_quadrant_array_index (outlist, jz);
-        }
-      }
-      if (replace_fn != NULL) {
-        jzend = jz;
-        p4est_balance_replace_recursive (p4est, which_tree,
-                                         outlist, jzstart, jzend, &tempq,
-                                         init_fn, replace_fn);
-      }
-      iz++;
-    }
-    else {
-      P4EST_ASSERT (p4est_quadrant_is_equal (q, p));
-      maxlevel = SC_MAX (maxlevel, q->level);
-      p->p.user_data = q->p.user_data;
-      iz++;
-      jz++;
-    }
-  }
-
-  P4EST_ASSERT (iz == tcount);
-
-  /* initialize new quadrants after last tquadrant */
-  for (; jz < ocount; jz++) {
-    p = p4est_quadrant_array_index (outlist, jz);
-    maxlevel = SC_MAX (maxlevel, p->level);
-    ++tree->quadrants_per_level[p->level];
-    p4est_quadrant_init_data (p4est, which_tree, p, init_fn);
-  }
-
-  /* resize tquadrants and copy */
-  sc_array_resize (tquadrants, ocount);
-  memcpy (tquadrants->array, outlist->array, outlist->elem_size * ocount);
-  tree->maxlevel = maxlevel;
+  p4est_subtree_replace (p4est, which_tree, outlist, init_fn, replace_fn);
 
   /* sanity check */
   if (p4est->user_data_pool != NULL) {

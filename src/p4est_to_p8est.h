@@ -323,6 +323,8 @@
 #define p4est_quadrant_array_is_reduced p8est_quadrant_array_is_reduced
 #define p4est_quadrant_array_insert_endpoints p8est_quadrant_array_insert_endpoints
 #define p4est_balance_kernel            p8est_balance_kernel
+#define p4est_complete_kernel           p8est_complete_kernel
+#define p4est_subtree_replace           p8est_subtree_replace
 
 /* functions in p4est_communication */
 #define p4est_comm_parallel_env_assign  p8est_comm_parallel_env_assign

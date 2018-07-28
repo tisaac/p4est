@@ -316,6 +316,13 @@ void                p4est_balance_kernel (sc_array_t *inlist, p4est_quadrant_t *
                                           p4est_quadrant_t *last_desc,
                                           size_t *count_in, size_t *count_out,
                                           size_t *count_an);
+void                p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom,
+                                           p4est_quadrant_t *first_desc,
+                                           p4est_quadrant_t *last_desc,
+                                           sc_array_t *out);
+void                p4est_subtree_replace (p4est_t *p4est, p4est_topidx_t which_tree,
+                                           sc_array_t *newquads, p4est_init_t init_fn,
+                                           p4est_replace_t replace_fn);
 
 SC_EXTERN_C_END;
 

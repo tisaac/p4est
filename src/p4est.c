@@ -2714,7 +2714,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
           insul.x = (i - 1) * H;
           insul.y = (j - 1) * H;
 #ifdef P4_TO_P8
-          insul.z = (j - 1) * H;
+          insul.z = (k - 1) * H;
 #endif
           insul.level = 0;
           p4est_quadrant_last_descendant (&insul, &ub, P4EST_QMAXLEVEL);
@@ -2754,6 +2754,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
                 p4est_quadrant_utransform (&oq[sq], &temp, &(tn->u[0]), 0);
 
                 p4est_quadrant_sibling (&temp, &trq[sq], 0);
+                P4EST_ASSERT (p4est_quadrant_is_valid (&trq[sq]));
               }
               sc_array_sort (&tform_quads, p4est_quadrant_compare);
               p4est_balance_sort_divide (p4est, procs, neigh_bufs, tn->nt, &tform_quads, 0);
@@ -2870,6 +2871,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
 #endif
     {
       size_t s, n;
+      sc_array_t newcomplete;
 
       n = recv_buf->elem_count;
       for (s = 0; s < n;) {
@@ -2885,11 +2887,24 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
             break;
           }
         }
-        sc_array_init_view (&view, recv_buf, s, z - 1 - s);
+        sc_array_init_view (&view, recv_buf, s, z - s);
         p4est_quadrant_array_reduce (&view, NULL, NULL);
         p4est_quadrant_array_merge_reduce (&tree_bufs[t - flt], &view);
         s = z;
       }
+      sc_array_init (&newcomplete, sizeof (p4est_quadrant_t));
+      p4est->local_num_quadrants = 0;
+      for (t = flt; t <= llt; t++) {
+        p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, t);
+        p4est_quadrant_t dom;
+
+        p4est_nearest_common_ancestor (&tree->first_desc, &tree->last_desc, &dom);
+        p4est_complete_kernel (&tree_bufs[t - flt], &dom, &tree->first_desc, &tree->last_desc, &newcomplete);
+        p4est_subtree_replace (p4est, t, &newcomplete, init_fn, replace_fn);
+        p4est->local_num_quadrants += newcomplete.elem_count;
+        sc_array_truncate (&newcomplete);
+      }
+      sc_array_reset (&newcomplete);
     }
   }
 #endif
@@ -2916,6 +2931,7 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
                    p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
   p4est_gloidx_t      old_gnq;
+  p4est_t            *p4est_c = NULL;
   const int8_t       *pre_adapt_flags = NULL;
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
@@ -2927,7 +2943,9 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   /* remember input quadrant count; it will not decrease */
   old_gnq = p4est->global_num_quadrants;
   if (1) {
-    p4est_balance_sort (p4est, btype, init_fn, replace_fn);
+    p4est_c = p4est_copy (p4est, 0);
+    p4est_c->inspect = p4est->inspect;
+    p4est_balance_sort (p4est_c, btype, NULL, NULL);
   }
   p4est_balance_ext_dirty (p4est, btype, init_fn, replace_fn);
   /* compute global number of quadrants */
@@ -2941,6 +2959,13 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   }
   P4EST_ASSERT (p4est_is_valid (p4est));
   P4EST_ASSERT (p4est_is_balanced (p4est, btype));
+  if (p4est_c) {
+    p4est_comm_count_quadrants (p4est_c);
+    P4EST_ASSERT (p4est_is_valid (p4est_c));
+    P4EST_ASSERT (p4est_is_balanced (p4est_c, btype));
+    P4EST_ASSERT (p4est_is_equal (p4est, p4est_c, 0));
+    p4est_destroy (p4est_c);
+  }
   p4est_log_indent_pop ();
   P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
                             "_balance with %lld total quadrants\n",

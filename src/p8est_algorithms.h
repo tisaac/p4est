@@ -316,6 +316,13 @@ void                p8est_balance_kernel (sc_array_t *inlist, p8est_quadrant_t *
                                           p8est_quadrant_t *last_desc,
                                           size_t *count_in, size_t *count_out,
                                           size_t *count_an);
+void                p8est_complete_kernel (sc_array_t *inlist, p8est_quadrant_t *dom,
+                                           p8est_quadrant_t *first_desc,
+                                           p8est_quadrant_t *last_desc,
+                                           sc_array_t *out);
+void                p8est_subtree_replace (p8est_t *p4est, p4est_topidx_t which_tree,
+                                           sc_array_t *newquads, p8est_init_t init_fn,
+                                           p8est_replace_t replace_fn);
 
 SC_EXTERN_C_END;
 
