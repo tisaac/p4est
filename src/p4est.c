@@ -2931,7 +2931,6 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
                    p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
   p4est_gloidx_t      old_gnq;
-  p4est_t            *p4est_c = NULL;
   const int8_t       *pre_adapt_flags = NULL;
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
@@ -2942,12 +2941,12 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   P4EST_ASSERT (p4est_is_valid (p4est));
   /* remember input quadrant count; it will not decrease */
   old_gnq = p4est->global_num_quadrants;
-  if (1) {
-    p4est_c = p4est_copy (p4est, 0);
-    p4est_c->inspect = p4est->inspect;
-    p4est_balance_sort (p4est_c, btype, NULL, NULL);
+  if (p4est->inspect && p4est->inspect->balance_sort) {
+    p4est_balance_sort (p4est, btype, NULL, NULL);
   }
-  p4est_balance_ext_dirty (p4est, btype, init_fn, replace_fn);
+  else {
+    p4est_balance_ext_dirty (p4est, btype, init_fn, replace_fn);
+  }
   /* compute global number of quadrants */
   p4est_comm_count_quadrants (p4est);
   if (p4est->inspect) {
@@ -2959,13 +2958,6 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   }
   P4EST_ASSERT (p4est_is_valid (p4est));
   P4EST_ASSERT (p4est_is_balanced (p4est, btype));
-  if (p4est_c) {
-    p4est_comm_count_quadrants (p4est_c);
-    P4EST_ASSERT (p4est_is_valid (p4est_c));
-    P4EST_ASSERT (p4est_is_balanced (p4est_c, btype));
-    P4EST_ASSERT (p4est_is_equal (p4est, p4est_c, 0));
-    p4est_destroy (p4est_c);
-  }
   p4est_log_indent_pop ();
   P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
                             "_balance with %lld total quadrants\n",

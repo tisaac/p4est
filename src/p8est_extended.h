@@ -76,6 +76,7 @@ struct p8est_inspect
   int                 flop_started;
   sc_notify_t        *notify;
   const int8_t       *pre_adapt_flags;
+  int                 balance_sort;
 };
 
 #define P4EST_FUNC_SNAP(p4est,snap)                                              \

@@ -479,8 +479,10 @@ main (int argc, char **argv)
   double              velnorm = 0.;
   double              mindist = -1.;
   const char         *out_base_name = NULL;
+  const char         *conn_string = NULL;
   const char         *notify_name;
   int                 ntop, nint, nbot;
+  int                 balance_sort = 0;
   p4est_inspect_t     inspect;
   sc_notify_type_t    notify_type;
   sc_statistics_t    *istats;
@@ -525,6 +527,8 @@ main (int argc, char **argv)
                       "Degree of quietude of output");
   sc_options_add_string (opt, 'o', "output", &out_base_name, NULL,
                          "Base name of visualization output");
+  sc_options_add_string (opt, 'c', "conn", &conn_string, NULL,
+                         "Name of connectivity");
   sc_options_add_int (opt, 'x', "max-level", &sphere.max_level,
                       sphere.max_level, "Maximum refinement level");
   sc_options_add_int (opt, 'i', "min-level", &sphere.min_level,
@@ -540,6 +544,9 @@ main (int argc, char **argv)
                       "wayness of int of sc_notify nary tree");
   sc_options_add_string (opt, 'n', "notify-type", &notify_name, NULL,
                          "Notify algorithm (see sc_notify.h) for type strings");
+  sc_options_add_int (opt, '\0', "balance-sort", &balance_sort,
+                      balance_sort,
+                      "2:1 balance using sorting-based parallel algorithm");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -565,6 +572,7 @@ main (int argc, char **argv)
     inspect.notify = sc_notify_new (mpicomm);
     sc_notify_set_type (inspect.notify, notify_type);
   }
+  inspect.balance_sort = balance_sort;
 
   sc_set_log_defaults (NULL, NULL, log_priority);
   p4est_init (NULL, log_priority);
@@ -574,13 +582,16 @@ main (int argc, char **argv)
   ctx.sphere = &sphere;
   ctx.viz_name = out_base_name;
 
+  if (conn_string) {
+    conn = p4est_connectivity_new_byname (conn_string);
+  }
+  else {
 #ifndef P4_TO_P8
-  //conn = p4est_connectivity_new_moebius ();
-  conn = p4est_connectivity_new_unitsquare ();
+    conn = p4est_connectivity_new_unitsquare ();
 #else
-  //conn = p8est_connectivity_new_rotcubes ();
-  conn = p8est_connectivity_new_unitcube ();
+    conn = p8est_connectivity_new_unitcube ();
 #endif
+  }
 
   p4est = p4est_new_ext (mpicomm, conn, 0 /* min quadrants per proc */ ,
                          sphere.min_level /* min quadrant level */ ,
