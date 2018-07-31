@@ -1332,6 +1332,9 @@ p4est_tree_get_conn_info (p4est_t *p4est, p4est_topidx_t t,
   p8est_edge_info_t ei;
   sc_array_t *eta = &ei.edge_transforms;
 #endif
+  sc_flopinfo_t snap;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
 #ifdef P4_TO_P8
   kstart = 0;
@@ -1425,6 +1428,7 @@ p4est_tree_get_conn_info (p4est_t *p4est, p4est_topidx_t t,
 #ifdef P4_TO_P8
   sc_array_reset (eta);
 #endif
+  P4EST_FUNC_SHOT (p4est, &snap);
   return 0;
 }
 
@@ -1660,6 +1664,9 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
   p4est_quadrant_t l = tree->last_desc;
   p4est_quadrant_t a, af, al, fstop, temp;
   int           alevel, fid, lid, idxor, dir, fstopid;
+  sc_flopinfo_t snap;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   p4est_nearest_common_ancestor (&f, &l, &a);
 
@@ -1716,6 +1723,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
     p4est_quadrant_sibling (&fstop, &temp, fstopid + 1);
     fstop = temp;
   }
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 static int
