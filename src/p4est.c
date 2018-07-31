@@ -1457,40 +1457,81 @@ p4est_tree_ghost_neigh_add_r (p4est_t *p4est, p4est_topidx_t from_tree, int insu
                               int *proc_hash, sc_array_t *procs)
 {
   int32_t rb;
+  p4est_quadrant_t fi_stack[64];
+  p4est_quadrant_t la_stack[64];
+  int p_fi_stack[64];
+  int p_la_stack[64];
+  int stack_pointer = 0;
 
-  rb = p4est_find_range_boundaries (fi, la, nlevel, NULL,
+  fi_stack[0] = *fi;
+  la_stack[0] = *la;
+  p_fi_stack[0] = p_fi;
+  p_la_stack[0] = p_la;
+
+  for (;;) {
+    P4EST_ASSERT (stack_pointer < 64);
+    rb = p4est_find_range_boundaries (&fi_stack[stack_pointer], &la_stack[stack_pointer], nlevel, NULL,
 #ifdef P4_TO_P8
-                                    NULL,
+                                      NULL,
 #endif
-                                    NULL);
-
-  if (!(rb & touch)) {
-    return;
-  }
-  if (p_fi == p_la) { /* (uniquely) add this tree's portion of the process range to the neighborhood */
-    int idx = proc_hash[p_fi];
-
-    if (!idx) {
-      /* process has not been seen before, add it */
-      *((int *) sc_array_push (procs)) = p_fi;
-      proc_hash[p_fi] = (int) procs->elem_count;
+                                      NULL);
+    if (!(rb & touch)) {
+      /* move down the stack */
+      while (stack_pointer > 0 && p_la_stack[stack_pointer] == p_la_stack[stack_pointer - 1]) {
+        stack_pointer--;
+      }
+      if (!stack_pointer) {
+        return;
+      }
+      p_fi_stack[stack_pointer] = p_fi_stack[stack_pointer - 1];
+      p_la_stack[stack_pointer] = p_la_stack[stack_pointer - 1];
+      fi_stack[stack_pointer] = fi_stack[stack_pointer - 1];
+      la_stack[stack_pointer] = la_stack[stack_pointer - 1];
+      continue;
     }
-    return;
-  }
-  /* recurse only if this range of processes is adjacent */
-  {
-    int num_procs = p_la + 1 - p_fi;
-    int mid = p_fi + num_procs / 2;
-    uint64_t id;
-    p4est_quadrant_t fihi, *lalo;
+    if (p_fi_stack[stack_pointer] == p_la_stack[stack_pointer]) { /* (uniquely) add this tree's portion of the process range to the neighborhood */
+      int p = p_fi_stack[stack_pointer];
+      int idx = proc_hash[p];
 
-    lalo = &p4est->global_first_position[mid];
-    id = p4est_quadrant_linear_id (lalo, P4EST_QMAXLEVEL);
-    p4est_quadrant_set_morton (&fihi, P4EST_QMAXLEVEL, id - 1);
-    p4est_tree_ghost_neigh_add_r (p4est, from_tree, insul, insul_max, which_tree, nlevel,
-                                  touch, p_fi, mid - 1, fi, &fihi, proc_hash, procs);
-    p4est_tree_ghost_neigh_add_r (p4est, from_tree, insul, insul_max, which_tree, nlevel,
-                                  touch, mid, p_la, lalo, la, proc_hash, procs);
+      if (!idx) {
+        /* process has not been seen before, add it */
+        *((int *) sc_array_push (procs)) = p;
+        proc_hash[p] = (int) procs->elem_count;
+      }
+      while (stack_pointer > 0 && p_la_stack[stack_pointer] == p_la_stack[stack_pointer - 1]) {
+        stack_pointer--;
+      }
+      if (!stack_pointer) {
+        return;
+      }
+      p_fi_stack[stack_pointer] = p_fi_stack[stack_pointer - 1];
+      p_la_stack[stack_pointer] = p_la_stack[stack_pointer - 1];
+      fi_stack[stack_pointer] = fi_stack[stack_pointer - 1];
+      la_stack[stack_pointer] = la_stack[stack_pointer - 1];
+      continue;
+    }
+    /* recurse only if this range of processes is adjacent */
+    {
+      int p = p_fi_stack[stack_pointer];
+      int q = p_la_stack[stack_pointer];
+      int num_procs = q + 1 - p;
+      int mid = p + num_procs / 2;
+      uint64_t id;
+      p4est_quadrant_t *lalo;
+
+      P4EST_ASSERT (stack_pointer < 63);
+      p_fi_stack[stack_pointer + 1] = p;
+      p_la_stack[stack_pointer + 1] = mid - 1;
+      fi_stack[stack_pointer + 1] = fi_stack[stack_pointer];
+
+      lalo = &p4est->global_first_position[mid];
+      id = p4est_quadrant_linear_id (lalo, P4EST_QMAXLEVEL);
+      p4est_quadrant_set_morton (&la_stack[stack_pointer + 1], P4EST_QMAXLEVEL, id - 1);
+      p_fi_stack[stack_pointer] = mid;
+      fi_stack[stack_pointer] = *lalo;
+
+      stack_pointer++;
+    }
   }
 }
 
