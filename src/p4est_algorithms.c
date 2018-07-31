@@ -2191,7 +2191,10 @@ p4est_subtree_replace (p4est_t *p4est, p4est_topidx_t which_tree,
   size_t iz, jz, jzstart = 0, jzend, ocount, tcount = tquadrants->elem_count;
   p4est_quadrant_t *q, *p;
   p4est_quadrant_t tempq;
+  sc_flopinfo_t snap;
   int maxlevel;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   ocount = newquads->elem_count;
 
@@ -2292,6 +2295,8 @@ p4est_subtree_replace (p4est_t *p4est, p4est_topidx_t which_tree,
   sc_array_resize (tquadrants, ocount);
   memcpy (tquadrants->array, newquads->array, newquads->elem_size * ocount);
   tree->maxlevel = maxlevel;
+
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 static void
