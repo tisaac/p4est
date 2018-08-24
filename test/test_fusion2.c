@@ -483,6 +483,7 @@ main (int argc, char **argv)
   const char         *notify_name;
   int                 ntop, nint, nbot;
   int                 balance_sort = 0;
+  int                 balance_sort_root = 0;
   p4est_inspect_t     inspect;
   sc_notify_type_t    notify_type;
   sc_statistics_t    *istats;
@@ -547,6 +548,9 @@ main (int argc, char **argv)
   sc_options_add_int (opt, '\0', "balance-sort", &balance_sort,
                       balance_sort,
                       "2:1 balance using sorting-based parallel algorithm");
+  sc_options_add_int (opt, '\0', "balance-sort-root", &balance_sort_root,
+                      balance_sort_root,
+                      "use fully synchronous sorting in 2:1 balance");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -573,6 +577,7 @@ main (int argc, char **argv)
     sc_notify_set_type (inspect.notify, notify_type);
   }
   inspect.balance_sort = balance_sort;
+  inspect.balance_sort_root = balance_sort_root;
 
   sc_set_log_defaults (NULL, NULL, log_priority);
   p4est_init (NULL, log_priority);

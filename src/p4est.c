@@ -1738,6 +1738,9 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
   p4est_quadrant_t fd, ld;
   p4est_quadrant_t *nd;
 
+  if (p4est->inspect && p4est->inspect->balance_sort_root) {
+    return 0;
+  }
   for (l = 0; l < P4EST_QMAXLEVEL; l++) {
     p4est_quadrant_t a, n;
     p4est_qcoord_t h;

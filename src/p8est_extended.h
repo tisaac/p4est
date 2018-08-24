@@ -77,6 +77,7 @@ struct p8est_inspect
   sc_notify_t        *notify;
   const int8_t       *pre_adapt_flags;
   int                 balance_sort;
+  int                 balance_sort_root;
 };
 
 #define P4EST_FUNC_SNAP(p4est,snap)                                              \
