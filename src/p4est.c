@@ -2839,6 +2839,14 @@ p4est_balance_sort_neigh (p4est_t *p4est, int flt, int llt, int num_trees,
         }
       }
     }
+    if (p4est->inspect && p4est->inspect->stats) {
+      if (!sc_statistics_has (p4est->inspect->stats, "balance neigh send")) {
+        sc_statistics_add_empty (p4est->inspect->stats, "balance neigh send");
+      }
+      if (!sc_statistics_has (p4est->inspect->stats, "balance neigh recv")) {
+        sc_statistics_add_empty (p4est->inspect->stats, "balance neigh recv");
+      }
+    }
     {
       p4est_quadrant_t fd = tree->first_desc;
       ssize_t sz;
@@ -2895,6 +2903,9 @@ p4est_balance_sort_neigh (p4est_t *p4est, int flt, int llt, int num_trees,
       }
       mpiret = MPI_Isend (buf->array, buf->elem_count * sizeof (p4est_quadrant_t), MPI_BYTE,
                           p, P4EST_COMM_BALANCE_SORT_NEIGH, p4est->mpicomm, &req[n]);
+      if (p4est->inspect && p4est->inspect->stats) {
+        sc_statistics_accumulate (p4est->inspect->stats, "balance neigh send", (double) buf->elem_count);
+      }
       SC_CHECK_MPI (mpiret);
     }
     for (n = 0; n < nneigh - 1; n++) {
@@ -2913,6 +2924,9 @@ p4est_balance_sort_neigh (p4est_t *p4est, int flt, int llt, int num_trees,
       q = (p4est_quadrant_t *) sc_array_push_count (recv_buf, rcount / sizeof (p4est_quadrant_t));
       mpiret = MPI_Recv (q, rcount, MPI_BYTE, p, P4EST_COMM_BALANCE_SORT_NEIGH,
                          p4est->mpicomm, MPI_STATUS_IGNORE);
+      if (p4est->inspect && p4est->inspect->stats) {
+        sc_statistics_accumulate (p4est->inspect->stats, "balance neigh recv", (double) (rcount / sizeof (p4est_quadrant_t)));
+      }
       SC_CHECK_MPI (mpiret);
     }
     mpiret = MPI_Waitall ((int) nneigh, req, MPI_STATUSES_IGNORE);
