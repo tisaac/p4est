@@ -2480,6 +2480,7 @@ p4est_balance_sort_sort (p4est_t *p4est, int flt, int llt,
           if (num_sort == 1 && bit[i^1] > bit[i]) {
             num_active = 1;
             state[i] = P4EST_BALSORT_SYNC;
+            break;
           }
           proc[i] = i ? rank + bit[i] : rank - bit[i];
           if (proc[i] >= procrange[i][0] && proc[i] <= procrange[i][1]) {
