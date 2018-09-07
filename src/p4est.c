@@ -1604,8 +1604,8 @@ p4est_tree_ghost_neighborhood_add (p4est_t *p4est, int from_tree, int insul, int
 }
 
 static void
-p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_quadrant_t *q,
-                                      p4est_tree_neigh_info_t *info, int *proc_hash, sc_array_t *procs)
+p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_topidx_t flt, p4est_topidx_t llt, p4est_quadrant_t *q,
+                                      p4est_tree_neigh_info_t *info, int *proc_hash, p4est_quadrant_t *sortquad, sc_array_t *procs)
 {
   p4est_qcoord_t h = P4EST_QUADRANT_LEN (q->level);
   int i, j, k, l, insulmax;
@@ -1637,6 +1637,13 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_qu
 
         rootinsul = p4est_root_insul (&n);
         if (rootinsul == P4EST_INSUL / 2) {
+          if (t == flt &&
+              (p4est_quadrant_is_equal (&sortquad[0], &n) ||
+               p4est_quadrant_is_ancestor (&sortquad[0], &n))) {
+            /* do not search for ghost neighbors inside the region
+             * where communication has been handled by the sort phase */
+            continue;
+          }
           p4est_tree_ghost_neighborhood_add (p4est, t, info->offset[rootinsul], insulmax, t, q, &n, proc_hash, procs);
         }
         else {
@@ -1657,12 +1664,13 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_qu
 }
 
 static void
-p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash, sc_array_t *procs, p4est_tree_neigh_info_t *info)
+p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, p4est_topidx_t flt, p4est_topidx_t llt, int *proc_hash, sc_array_t *procs, int *minlevel, p4est_tree_neigh_info_t *info)
 {
   p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, t);
   p4est_quadrant_t f = tree->first_desc;
   p4est_quadrant_t l = tree->last_desc;
   p4est_quadrant_t a, af, al, fstop, temp;
+  p4est_quadrant_t sortquad[2];
   int           alevel, fid, lid, idxor, dir, fstopid;
   sc_flopinfo_t snap;
 
@@ -1672,11 +1680,19 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
 
   alevel = a.level;
 
+
   p4est_quadrant_first_descendant (&a, &af, P4EST_QMAXLEVEL);
   p4est_quadrant_last_descendant (&a, &al, P4EST_QMAXLEVEL);
+
+  if (t == flt) {
+    p4est_quadrant_ancestor (&f, minlevel[0], &sortquad[0]);
+  }
+  if (t == llt) {
+    p4est_quadrant_ancestor (&l, minlevel[1], &sortquad[1]);
+  }
   if (p4est_quadrant_is_equal (&f, &af) &&
       p4est_quadrant_is_equal (&l, &al)) {
-    p4est_tree_ghost_neighborhood_insert (p4est, t, &a, info, proc_hash, procs);
+    p4est_tree_ghost_neighborhood_insert (p4est, t, flt, llt, &a, info, proc_hash, sortquad, procs);
     return;
   }
   fid = p4est_quadrant_ancestor_id (&f, alevel + 1);
@@ -1698,7 +1714,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
   P4EST_ASSERT (!p4est_quadrant_overlaps (&f, &fstop) && p4est_quadrant_compare (&f, &fstop) < 0);
   P4EST_ASSERT (p4est_quadrant_compare (&fstop, &l) <= 0);
   for (;;) {
-    p4est_tree_ghost_neighborhood_insert (p4est, t, &f, info, proc_hash, procs);
+    p4est_tree_ghost_neighborhood_insert (p4est, t, flt, llt, &f, info, proc_hash, sortquad, procs);
     fid = p4est_quadrant_child_id (&f);
     while (fid == P4EST_CHILDREN - 1) {
       p4est_quadrant_parent (&f, &f);
@@ -1714,7 +1730,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, int *proc_hash,
     while (p4est_quadrant_is_ancestor (&fstop, &l)) {
       fstop.level++;
     }
-    p4est_tree_ghost_neighborhood_insert (p4est, t, &fstop, info, proc_hash, procs);
+    p4est_tree_ghost_neighborhood_insert (p4est, t, flt, llt, &fstop, info, proc_hash, sortquad, procs);
     if (p4est_quadrant_is_equal (&fstop, &l)) {
       break;
     }
@@ -2175,7 +2191,7 @@ p4est_balance_sort_compute_pattern_neigh (p4est_t *p4est,
                                           int flt, int llt, int num_trees,
                                           p4est_tree_neigh_info_t *tinfo,
                                           int *proc_hash, sc_array_t *procs,
-                                          int (*procrange)[2], int *minlevel, int *num_sort,
+                                          int *minlevel,
                                           p4est_quadrant_t *desc)
 {
   p4est_topidx_t t;
@@ -2198,7 +2214,7 @@ p4est_balance_sort_compute_pattern_neigh (p4est_t *p4est,
 
     /* find ghost neighbors of this tree */
     if (num_trees) {
-      p4est_tree_ghost_neighborhood (p4est, t, proc_hash, procs, info);
+      p4est_tree_ghost_neighborhood (p4est, t, flt, llt, proc_hash, procs, minlevel, info);
     }
   }
   sc_array_sort (procs, sc_int_compare);
@@ -2863,6 +2879,10 @@ p4est_balance_sort_neigh (p4est_t *p4est, int flt, int llt, int num_trees,
       }
     }
     if (p4est->inspect && p4est->inspect->stats) {
+      if (!sc_statistics_has (p4est->inspect->stats, "balance neigh")) {
+        sc_statistics_add_empty (p4est->inspect->stats, "balance neigh");
+        sc_statistics_accumulate (p4est->inspect->stats, "balance neigh", (double) nneigh);
+      }
       if (!sc_statistics_has (p4est->inspect->stats, "balance neigh send")) {
         sc_statistics_add_empty (p4est->inspect->stats, "balance neigh send");
       }
@@ -3081,20 +3101,10 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
       flt = llt = q.p.which_tree;
     }
   }
-  proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
-  procs = sc_array_new_size (sizeof (int), P4EST_INSUL);
   tinfo = P4EST_ALLOC (p4est_tree_neigh_info_t, llt + 1 - flt);
   p4est_balance_sort_compute_pattern_sort (p4est, flt, llt, num_trees,
                                            tinfo,
                                            procrange, minlevel, &num_sort, desc);
-  p4est_balance_sort_compute_pattern_neigh (p4est, flt, llt, num_trees,
-                                            tinfo, proc_hash, procs,
-                                            procrange, minlevel, &num_sort, desc);
-  nneigh = procs->elem_count;
-  neigh_bufs = P4EST_ALLOC (sc_array_t, nneigh);
-  for (s = 0; s < nneigh; s++) {
-    sc_array_init (&neigh_bufs[s], sizeof (p4est_quadrant_t));
-  }
   tree_bufs = P4EST_ALLOC (sc_array_t, num_trees);
   for (t = 0; t < num_trees; t++) {
     sc_array_init (&tree_bufs[t], sizeof (p4est_quadrant_t));
@@ -3116,6 +3126,17 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
 
   sc_array_reset (&sort_bufs[1]);
   sc_array_reset (&sort_bufs[0]);
+
+  proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
+  procs = sc_array_new_size (sizeof (int), P4EST_INSUL);
+  p4est_balance_sort_compute_pattern_neigh (p4est, flt, llt, num_trees,
+                                            tinfo, proc_hash, procs,
+                                            minlevel, desc);
+  nneigh = procs->elem_count;
+  neigh_bufs = P4EST_ALLOC (sc_array_t, nneigh);
+  for (s = 0; s < nneigh; s++) {
+    sc_array_init (&neigh_bufs[s], sizeof (p4est_quadrant_t));
+  }
   p4est_balance_sort_neigh (p4est, flt, llt, num_trees, proc_hash, procs, tinfo,
                             tree_bufs, neigh_bufs);
 
