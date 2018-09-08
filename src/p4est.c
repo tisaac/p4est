@@ -1644,6 +1644,13 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_to
              * where communication has been handled by the sort phase */
             continue;
           }
+          if (t == llt &&
+              (p4est_quadrant_is_equal (&sortquad[1], &n) ||
+               p4est_quadrant_is_ancestor (&sortquad[1], &n))) {
+            /* do not search for ghost neighbors inside the region
+             * where communication has been handled by the sort phase */
+            continue;
+          }
           p4est_tree_ghost_neighborhood_add (p4est, t, info->offset[rootinsul], insulmax, t, q, &n, proc_hash, procs);
         }
         else {
