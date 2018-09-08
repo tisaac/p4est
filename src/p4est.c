@@ -1609,6 +1609,8 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_to
 {
   p4est_qcoord_t h = P4EST_QUADRANT_LEN (q->level);
   int i, j, k, l, insulmax;
+  int insort0 = 0;
+  int insort1 = 0;
 #ifdef P4_TO_P8
   int kstart = 0, kend = 3;
 #else
@@ -1616,6 +1618,8 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_to
 #endif
 
   insulmax = info->offset[P4EST_INSUL];
+  insort0 = (t == flt && p4est_quadrant_is_ancestor (&sortquad[0], q));
+  insort1 = (t == llt && p4est_quadrant_is_ancestor (&sortquad[1], q));
   for (k = kstart, l = 0; k < kend; k++) {
     for (j = 0; j < 3; j++) {
       for (i = 0; i < 3; i++, l++) {
@@ -1637,16 +1641,12 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_to
 
         rootinsul = p4est_root_insul (&n);
         if (rootinsul == P4EST_INSUL / 2) {
-          if (t == flt &&
-              (p4est_quadrant_is_equal (&sortquad[0], &n) ||
-               p4est_quadrant_is_ancestor (&sortquad[0], &n))) {
+          if (insort0 && p4est_quadrant_is_ancestor(&sortquad[0], &n)) {
             /* do not search for ghost neighbors inside the region
              * where communication has been handled by the sort phase */
             continue;
           }
-          if (t == llt &&
-              (p4est_quadrant_is_equal (&sortquad[1], &n) ||
-               p4est_quadrant_is_ancestor (&sortquad[1], &n))) {
+          if (insort1 && p4est_quadrant_is_ancestor(&sortquad[1], &n)) {
             /* do not search for ghost neighbors inside the region
              * where communication has been handled by the sort phase */
             continue;
