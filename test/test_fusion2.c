@@ -487,6 +487,7 @@ main (int argc, char **argv)
   p4est_inspect_t     inspect;
   sc_notify_type_t    notify_type;
   sc_statistics_t    *istats;
+  p4est_vtk_context_t *vtk;
 
   /* initialize default values for sphere:
    * TODO: make configurable */
@@ -680,7 +681,19 @@ main (int argc, char **argv)
       char                buffer[BUFSIZ] = { '\0' };
 
       snprintf (buffer, BUFSIZ, "%s_pre", ctx.viz_name);
-      p4est_vtk_write_file (forest_copy, NULL, buffer);
+      vtk = p4est_vtk_context_new (forest_copy, buffer);
+      p4est_vtk_context_set_continuous (vtk, 1);
+      p4est_vtk_context_set_scale (vtk, 1.);
+      vtk = p4est_vtk_write_header (vtk);
+      vtk = p4est_vtk_write_cell_dataf (vtk,
+                                  0, /* write tree */
+                                  1, /* write level */
+                                  2, /* write rank */
+                                  0, /* wrap rank */
+                                  0, /* no scalars */
+                                  0, /* no vectors */
+                                  vtk);
+      p4est_vtk_write_footer (vtk);
     }
 
     if (!skip_reference) {
@@ -726,7 +739,18 @@ main (int argc, char **argv)
         char                buffer[BUFSIZ] = { '\0' };
 
         snprintf (buffer, BUFSIZ, "%s_first_coarsen", ctx.viz_name);
-        p4est_vtk_write_file (forest_copy, NULL, buffer);
+        vtk = p4est_vtk_context_new (forest_copy, buffer);
+        p4est_vtk_context_set_continuous (vtk, 0);
+        vtk = p4est_vtk_write_header (vtk);
+        vtk = p4est_vtk_write_cell_dataf (vtk,
+                                    0, /* write tree */
+                                    1, /* write level */
+                                    2, /* write rank */
+                                    0, /* wrap rank */
+                                    0, /* no scalars */
+                                    0, /* no vectors */
+                                    vtk);
+        p4est_vtk_write_footer (vtk);
       }
 
       sc_flops_shot (&fi_coarsen, &snapshot_coarsen);
@@ -751,7 +775,18 @@ main (int argc, char **argv)
         char                buffer[BUFSIZ] = { '\0' };
 
         snprintf (buffer, BUFSIZ, "%s_second_refine", ctx.viz_name);
-        p4est_vtk_write_file (forest_copy, NULL, buffer);
+        vtk = p4est_vtk_context_new (forest_copy, buffer);
+        p4est_vtk_context_set_continuous (vtk, 0);
+        vtk = p4est_vtk_write_header (vtk);
+        vtk = p4est_vtk_write_cell_dataf (vtk,
+                                    0, /* write tree */
+                                    1, /* write level */
+                                    2, /* write rank */
+                                    0, /* wrap rank */
+                                    0, /* no scalars */
+                                    0, /* no vectors */
+                                    vtk);
+        p4est_vtk_write_footer (vtk);
       }
 
       P4EST_FREE (rflags_copy);
@@ -791,7 +826,19 @@ main (int argc, char **argv)
         char                buffer[BUFSIZ] = { '\0' };
 
         snprintf (buffer, BUFSIZ, "%s_post", ctx.viz_name);
-        p4est_vtk_write_file (forest_copy, NULL, buffer);
+        vtk = p4est_vtk_context_new (forest_copy, buffer);
+        p4est_vtk_context_set_continuous (vtk, 1);
+        p4est_vtk_context_set_scale (vtk, 1.);
+        vtk = p4est_vtk_write_header (vtk);
+        vtk = p4est_vtk_write_cell_dataf (vtk,
+                                          0, /* write tree */
+                                          1, /* write level */
+                                          2, /* write rank */
+                                          0, /* wrap rank */
+                                          0, /* no scalars */
+                                          0, /* no vectors */
+                                          vtk);
+        p4est_vtk_write_footer (vtk);
       }
     }
 
