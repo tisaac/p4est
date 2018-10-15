@@ -1749,8 +1749,14 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, p4est_topidx_t 
   P4EST_FUNC_SHOT (p4est, &snap);
 }
 
+typedef struct
+{
+  sc_array_t intervals;
+}
+p4est_balsort_comm_t;
+
 static int
-p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t *info, p4est_quadrant_t *q)
+p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t *info, p4est_quadrant_t *q, sc_array_t * balsort_comms, int **procs)
 {
   int i, j, k, l, m, p;
 #ifdef P4_TO_P8
@@ -1760,6 +1766,7 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
 #endif
   p4est_quadrant_t fd, ld;
   p4est_quadrant_t *nd;
+  int any_single = 0;
 
   if (p4est->inspect && p4est->inspect->balance_sort_root) {
     return 0;
@@ -1767,12 +1774,13 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
   for (l = 0; l < P4EST_QMAXLEVEL; l++) {
     p4est_quadrant_t a, n;
     p4est_qcoord_t h;
+    int neigh;
 
     p4est_quadrant_ancestor (q, l, &a);
     h = P4EST_QUADRANT_LEN (l);
     n.level = l;
     n.p.which_tree = q->p.which_tree;
-    for (m = 0, k = kstart; k < kend; k++) {
+    for (neigh = 0, m = 0, k = kstart; k < kend; k++) {
       for (j = 0; j < 3; j++) {
         for (i = 0; i < 3; i++, m++) {
           int rootinsul;
@@ -1792,10 +1800,15 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
             ld.p.which_tree = n.p.which_tree;
             p = p4est_comm_find_owner (p4est, q->p.which_tree, &fd, p4est->mpirank);
             nd = &p4est->global_first_position[p + 1];
+            procs[neigh][0] = p;
             if (p4est_quadrant_compare_piggy (&ld, nd) < 0) {
-              /* n is entirely contained in one process */
-              return l;
+              any_single = 1;
+              procs[neigh][0] = p;
             }
+            else {
+              procs[neigh][1] = p4est_comm_find_owner (p4est, q->p.which_tree, &ld, p4est->mpirank);
+            }
+            neigh++;
           }
           else {
             size_t s, s_start, s_end;
@@ -1814,16 +1827,32 @@ p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t
               nd = &p4est->global_first_position[p + 1];
               if (p4est_quadrant_compare_piggy (&ld, nd) < 0) {
                 /* nn is entirely contained in one process */
-                return l;
+                any_single = 1;
+                procs[neigh][0] = p;
               }
+              else {
+                procs[neigh][1] = p4est_comm_find_owner (p4est, tn->nt, &ld, p4est->mpirank);
+              }
+              neigh++;
             }
           }
         }
       }
     }
   }
-  SC_ABORT_NOT_REACHED();
-  return -1;
+  if (!any_single) {
+    return 0;
+  }
+  else {
+    for (i = 0; i < P4EST_CHILDREN; i++) {
+      /* for each insulation quad around the corner */
+      for (j = 0; j < P4EST_CHILDREN; j++) {
+        /* if there is a single processor quad in this group, create a
+         * balsort_comm */
+      }
+    }
+  }
+  return 0;
 }
 
 static void
@@ -2081,7 +2110,8 @@ p4est_balance_sort_compute_pattern_sort (p4est_t *p4est,
                                          int flt, int llt, int num_trees,
                                          p4est_tree_neigh_info_t *tinfo,
                                          int (*procrange)[2], int *minlevel, int *num_sort,
-                                         p4est_quadrant_t *desc)
+                                         p4est_quadrant_t *desc,
+                                         sc_array_t *balsort_comms)
 {
   p4est_topidx_t t;
   sc_flopinfo_t snap;
@@ -3111,7 +3141,7 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   tinfo = P4EST_ALLOC (p4est_tree_neigh_info_t, llt + 1 - flt);
   p4est_balance_sort_compute_pattern_sort (p4est, flt, llt, num_trees,
                                            tinfo,
-                                           procrange, minlevel, &num_sort, desc);
+                                           procrange, minlevel, &num_sort, desc, NULL);
   tree_bufs = P4EST_ALLOC (sc_array_t, num_trees);
   for (t = 0; t < num_trees; t++) {
     sc_array_init (&tree_bufs[t], sizeof (p4est_quadrant_t));
