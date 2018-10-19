@@ -199,7 +199,8 @@
 #define p4est_coarsen_ext               p8est_coarsen_ext
 #define p4est_coarsen_ext_dirty         p8est_coarsen_ext_dirty
 #define p4est_balance_ext               p8est_balance_ext
-#define p4est_balance_ext_dirty         p8est_balance_ext_dirty
+#define p4est_balance_tworound          p8est_balance_tworound
+#define p4est_balance_sort              p8est_balance_sort
 #define p4est_balance_subtree_ext       p8est_balance_subtree_ext
 #define p4est_partition_ext             p8est_partition_ext
 #define p4est_partition_for_coarsening  p8est_partition_for_coarsening

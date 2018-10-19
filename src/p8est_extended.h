@@ -260,11 +260,6 @@ void                p8est_balance_ext (p8est_t * p8est,
                                        p8est_init_t init_fn,
                                        p8est_replace_t replace_fn);
 
-void                p8est_balance_ext_dirty (p8est_t * p8est,
-                                             p8est_connect_type_t btype,
-                                             p8est_init_t init_fn,
-                                             p8est_replace_t replace_fn);
-
 void                p8est_balance_subtree_ext (p8est_t * p8est,
                                                p8est_connect_type_t btype,
                                                p4est_topidx_t which_tree,
