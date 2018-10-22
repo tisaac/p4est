@@ -15,7 +15,7 @@ libp4est_installed_headers += \
         src/p4est_ghost.h src/p4est_nodes.h src/p4est_vtk.h \
         src/p4est_points.h src/p4est_geometry.h \
         src/p4est_iterate.h src/p4est_lnodes.h src/p4est_mesh.h \
-        src/p4est_balance_seeds.h src/p4est_io.h \
+        src/p4est_balance_obj.h src/p4est_balance_seeds.h src/p4est_io.h \
         src/p4est_wrap.h src/p4est_plex.h \
         src/p4est_fused.h
 libp4est_compiled_sources += \
@@ -25,7 +25,7 @@ libp4est_compiled_sources += \
         src/p4est_ghost.c src/p4est_nodes.c src/p4est_vtk.c \
         src/p4est_points.c src/p4est_geometry.c \
         src/p4est_iterate.c src/p4est_lnodes.c src/p4est_mesh.c \
-        src/p4est_balance_seeds.c src/p4est_balance_tworound.c \
+        src/p4est_balance_obj.c src/p4est_balance_seeds.c src/p4est_balance_tworound.c \
         src/p4est_balance_sort.c src/p4est_io.c \
         src/p4est_connrefine.c \
         src/p4est_wrap.c src/p4est_plex.c \
@@ -40,7 +40,7 @@ libp4est_installed_headers += \
         src/p8est_ghost.h src/p8est_nodes.h src/p8est_vtk.h \
         src/p8est_points.h src/p8est_geometry.h \
         src/p8est_iterate.h src/p8est_lnodes.h src/p8est_mesh.h \
-        src/p8est_tets_hexes.h src/p8est_balance_seeds.h src/p8est_io.h \
+        src/p8est_tets_hexes.h src/p8est_balance_obj.h src/p8est_balance_seeds.h src/p8est_io.h \
         src/p8est_wrap.h src/p8est_plex.h \
         src/p8est_fused.h
 libp4est_compiled_sources += \
@@ -51,7 +51,7 @@ libp4est_compiled_sources += \
         src/p8est_points.c src/p8est_geometry.c \
         src/p8est_iterate.c src/p8est_lnodes.c src/p8est_mesh.c \
         src/p8est_tets_hexes.c src/p8est_balance_seeds.c src/p8est_io.c \
-        src/p8est_balance_sort.c src/p8est_balance_tworound.c \
+        src/p8est_balance_obj.c src/p8est_balance_sort.c src/p8est_balance_tworound.c \
         src/p8est_connrefine.c \
         src/p8est_wrap.c src/p8est_plex.c \
         src/p8est_fused.c
