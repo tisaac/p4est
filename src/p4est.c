@@ -30,7 +30,7 @@
 #include <p8est_ghost.h>
 #include <p8est_io.h>
 #include <p8est_search.h>
-#include <p8est_balance_seeds.h>
+#include <p8est_balance_obj.h>
 #else
 #include <p4est_algorithms.h>
 #include <p4est_bits.h>
@@ -39,7 +39,7 @@
 #include <p4est_ghost.h>
 #include <p4est_io.h>
 #include <p4est_search.h>
-#include <p4est_balance_seeds.h>
+#include <p4est_balance_obj.h>
 #endif /* !P4_TO_P8 */
 #include <sc_io.h>
 #include <sc_notify.h>
@@ -1167,8 +1167,19 @@ void
 p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
                    p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
+  p4est_balance_obj_t *bobj;
   p4est_gloidx_t      old_gnq;
   const int8_t       *pre_adapt_flags = NULL;
+
+#if 0
+  bobj = p4est_balance_obj_new (p4est->mpicomm);
+
+  p4est_balance_obj_set_connect (bobj, btype);
+  p4est_balance_obj_set_init (bobj, init_fn);
+  p4est_balance_obj_set_replace (bobj, init_fn);
+  p4est_balance_obj (bobj, p4est);
+  p4est_balance_obj_destroy (bobj);
+#endif
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
                             "_balance %s with %lld total quadrants\n",
