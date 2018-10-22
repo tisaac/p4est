@@ -436,7 +436,29 @@
 #define p4est_mesh_face_neighbor_next   p8est_mesh_face_neighbor_next
 #define p4est_mesh_face_neighbor_data   p8est_mesh_face_neighbor_data
 
-/* functions in p4est_balance */
+/* functions and objects in p4est_balance_seeds */
+#define p4est_balance_method_t          p8est_balance_method_t
+#define p4est_balance_method_strings    p8est_balance_method_strings
+#define p4est_balance_obj_new           p8est_balance_obj_new
+#define p4est_balance_obj_destroy       p8est_balance_obj_destroy
+#define p4est_balance_obj_get_comm      p8est_balance_obj_get_comm
+#define p4est_balance_obj_set_stats     p8est_balance_obj_set_stats
+#define p4est_balance_obj_get_stats     p8est_balance_obj_get_stats
+#define p4est_balance_obj_set_method    p8est_balance_obj_set_method
+#define p4est_balance_obj_get_method    p8est_balance_obj_get_method
+#define p4est_balance_obj_set_init      p8est_balance_obj_set_init
+#define p4est_balance_obj_get_init      p8est_balance_obj_get_init
+#define p4est_balance_obj_set_replace   p8est_balance_obj_set_replace
+#define p4est_balance_obj_get_replace   p8est_balance_obj_get_replace
+#define p4est_balance_obj               p8est_balance_obj
+#define P4EST_BALANCE_DEFAULT           P8EST_BALANCE_DEFAULT
+#define P4EST_BALANCE_SORT              P8EST_BALANCE_SORT
+#define P4EST_BALANCE_TWOROUND          P8EST_BALANCE_TWOROUND
+#define P4EST_BALANCE_NUM_METHODS       P8EST_BALANCE_NUM_METHODS
+#define P4EST_BALANCE_STR_SORT          P8EST_BALANCE_STR_SORT
+#define P4EST_BALANCE_STR_TWOROUND      P8EST_BALANCE_STR_TWOROUND
+
+/* functions in p4est_balance_obj */
 #define p4est_balance_seeds_face        p8est_balance_seeds_face
 #define p4est_balance_seeds_corner      p8est_balance_seeds_corner
 #define p4est_balance_seeds             p8est_balance_seeds

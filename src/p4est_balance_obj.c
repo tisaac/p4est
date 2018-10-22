@@ -22,3 +22,23 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+#ifndef P4_TO_P8
+#include <p4est_balance_obj.h>
+#else
+#include <p8est_balance_obj.h>
+#endif
+
+struct p4est_balance_obj_s
+{
+  sc_MPI_Comm            comm;
+  p4est_balance_method_t method;
+  sc_statistics_t        *stats;
+  p4est_connect_type_t   connect;
+  p4est_init_t           init_fn;
+  p4est_replace_t        replace_fn;
+};
+
+const char *p4est_balance_method_strings[] = {
+  P4EST_BALANCE_STR_SORT,
+  P4EST_BALANCE_STR_TWOROUND,
+};

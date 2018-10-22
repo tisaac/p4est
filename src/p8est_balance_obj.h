@@ -40,12 +40,8 @@
 #define P8EST_BALANCE_OBJ_H
 
 #include <p8est.h>
-#include <p8est_mesh.h>
-#include <p8est_iterate.h>
-#include <p8est_lnodes.h>
-#include <sc_notify.h>
+#include <p8est_extended.h>
 #include <sc_statistics.h>
-#include <sc_flops.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -69,14 +65,14 @@ extern const char  *p8est_balance_method_strings[P8EST_BALANCE_NUM_METHODS];
 p8est_balance_obj_t    *p8est_balance_obj_new (sc_MPI_Comm mpicomm);
 void      p8est_balance_obj_destroy (p8est_balance_obj_t * bobj);
 
-sc_MPI_Comm         p8est_balance_obj_get_comm (sc_notify_t * notify);
+sc_MPI_Comm         p8est_balance_obj_get_comm (p8est_balance_obj_t * notify);
 
 void      p8est_balance_obj_set_stats (p8est_balance_obj_t * bobj,
                                        sc_statistics_t * stats);
 sc_statistics_t *p8est_balance_obj_get_stats (p8est_balance_obj_t * bobj);
 
 void      p8est_balance_obj_set_method (p8est_balance_obj_t *bobj,
-                                        p8est_balance_methods_t method);
+                                        p8est_balance_method_t method);
 p8est_balance_method_t p8est_balance_obj_get_method (p8est_balance_obj_t *bobj);
 
 void      p8est_balance_obj_set_connect_type (p8est_balance_obj_t *bobj,
