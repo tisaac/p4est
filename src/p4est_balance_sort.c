@@ -28,14 +28,14 @@
 #include <p8est_search.h>
 #include <p8est_communication.h>
 #include <p8est_algorithms.h>
-#include <p8est_balance.h>
+#include <p8est_balance_seeds.h>
 #else
 #include <p4est_extended.h>
 #include <p4est_bits.h>
 #include <p4est_search.h>
 #include <p4est_communication.h>
 #include <p4est_algorithms.h>
-#include <p4est_balance.h>
+#include <p4est_balance_seeds.h>
 #endif
 
 typedef struct

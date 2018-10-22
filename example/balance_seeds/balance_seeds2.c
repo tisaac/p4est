@@ -24,12 +24,12 @@
 
 #include <sc_dmatrix.h>
 #ifndef P4_TO_P8
-#include <p4est_balance.h>
+#include <p4est_balance_seeds.h>
 #include <p4est_bits.h>
 #include <p4est_vtk.h>
 #include <p4est_extended.h>
 #else
-#include <p8est_balance.h>
+#include <p8est_balance_seeds.h>
 #include <p8est_bits.h>
 #include <p8est_vtk.h>
 #include <p8est_extended.h>

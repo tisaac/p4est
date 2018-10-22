@@ -30,7 +30,7 @@
 #include <p8est_ghost.h>
 #include <p8est_io.h>
 #include <p8est_search.h>
-#include <p8est_balance.h>
+#include <p8est_balance_seeds.h>
 #else
 #include <p4est_algorithms.h>
 #include <p4est_bits.h>
@@ -39,7 +39,7 @@
 #include <p4est_ghost.h>
 #include <p4est_io.h>
 #include <p4est_search.h>
-#include <p4est_balance.h>
+#include <p4est_balance_seeds.h>
 #endif /* !P4_TO_P8 */
 #include <sc_io.h>
 #include <sc_notify.h>
