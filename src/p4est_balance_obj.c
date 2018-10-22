@@ -42,3 +42,43 @@ const char *p4est_balance_method_strings[] = {
   P4EST_BALANCE_STR_SORT,
   P4EST_BALANCE_STR_TWOROUND,
 };
+
+p4est_balance_obj_t *
+p4est_balance_obj_new (sc_MPI_Comm mpicomm)
+{
+  p4est_balance_obj_t *bal;
+
+  bal = SC_ALLOC_ZERO (p4est_balance_obj_t, 1);
+
+  bal->comm = mpicomm;
+  bal->method = P4EST_BALANCE_DEFAULT;
+  bal->connect = P4EST_CONNECT_FULL;
+  return bal;
+}
+
+void
+p4est_balance_obj_destroy (p4est_balance_obj_t *obj)
+{
+  SC_FREE (obj);
+}
+
+sc_MPI_Comm
+p4est_balance_obj_get_comm (p4est_balance_obj_t *obj)
+{
+  return obj->comm;
+}
+
+void
+p4est_balance_set_stats (p4est_balance_obj_t *bobj,
+                         sc_statistics_t *stats)
+{
+  bobj->stats = stats;
+}
+
+sc_statistics_t *
+p4est_balance_get_stats (p4est_balance_obj_t *bobj)
+{
+  return bobj->stats;
+}
+
+
