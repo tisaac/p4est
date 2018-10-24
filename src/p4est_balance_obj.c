@@ -134,7 +134,7 @@ p4est_connect_type_t p4est_balance_obj_get_connect (p4est_balance_obj_t *bobj)
 void      p4est_balance_obj_set_init (p4est_balance_obj_t *bobj,
                                       p4est_init_t init_fn)
 {
- //TODO
+  bobj->init_fn = init_fn;
 }
 
 p4est_init_t p4est_balance_obj_get_init (p4est_balance_obj_t *bobj)
@@ -145,7 +145,7 @@ p4est_init_t p4est_balance_obj_get_init (p4est_balance_obj_t *bobj)
 void      p4est_balance_obj_set_replace (p4est_balance_obj_t *bobj,
                                          p4est_replace_t replace_fn)
 {
- //TODO 
+  bobj->replace_fn = replace_fn;
 }
 
 p4est_replace_t p4est_balance_obj_get_replace (p4est_balance_obj_t *bobj)

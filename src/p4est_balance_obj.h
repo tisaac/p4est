@@ -60,6 +60,8 @@ p4est_balance_method_t;
 #define P4EST_BALANCE_STR_TWOROUND "tworound"
 
 /** Names for each notify method */
+
+extern p4est_balance_method_t   p4est_balance_method_default = P4EST_BALANCE_SORT;
 extern const char  *p4est_balance_method_strings[P4EST_BALANCE_NUM_METHODS];
 
 p4est_balance_obj_t    *p4est_balance_obj_new (sc_MPI_Comm mpicomm);
