@@ -794,6 +794,7 @@ p4est_adapt_fused (p4est_t * p4est,
     sc_notify_superset_set_callback ((*p4est_out)->inspect->notify,
                                      p4est_superset_callback, (void *) p4est);
   }
+  /* TODO: use balance_obj here */
   p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
   if (own_notify) {
     sc_notify_destroy ((*p4est_out)->inspect->notify);

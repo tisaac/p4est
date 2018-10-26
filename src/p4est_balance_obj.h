@@ -97,6 +97,13 @@ void                p4est_balance_obj_set_replace (p4est_balance_obj_t * bobj,
 p4est_replace_t     p4est_balance_obj_get_replace (p4est_balance_obj_t *
                                                    bobj);
 
+/* TODO: make balance_sort use these flags */
+void                p4est_balance_set_adapt_flags (p4est_balance_obj_t *bobj,
+                                                   const int8_t *flags);
+void                p4est_balance_get_adapt_flags (p4est_balance_obj_t *bobj,
+                                                   const int8_t *flags);
+
+
 void                p4est_balance_obj (p4est_balance_obj_t * bobj,
                                        p4est_t * p4est);
 
