@@ -59,38 +59,45 @@ p8est_balance_method_t;
 #define P8EST_BALANCE_STR_SORT     "sort"
 #define P8EST_BALANCE_STR_TWOROUND "tworound"
 
+/** The method that will be used if the user chooses P4EST_BALANCE_DEFAULT */
+extern p8est_balance_method_t p8est_balance_method_default;
+
 /** Names for each notify method */
 extern const char  *p8est_balance_method_strings[P8EST_BALANCE_NUM_METHODS];
 
-p8est_balance_obj_t    *p8est_balance_obj_new (sc_MPI_Comm mpicomm);
-void      p8est_balance_obj_destroy (p8est_balance_obj_t * bobj);
+p8est_balance_obj_t *p8est_balance_obj_new (sc_MPI_Comm mpicomm);
+void                p8est_balance_obj_destroy (p8est_balance_obj_t * bobj);
 
 sc_MPI_Comm         p8est_balance_obj_get_comm (p8est_balance_obj_t * notify);
 
-void      p8est_balance_obj_set_stats (p8est_balance_obj_t * bobj,
-                                       sc_statistics_t * stats);
-sc_statistics_t *p8est_balance_obj_get_stats (p8est_balance_obj_t * bobj);
+void                p8est_balance_obj_set_stats (p8est_balance_obj_t * bobj,
+                                                 sc_statistics_t * stats);
+sc_statistics_t    *p8est_balance_obj_get_stats (p8est_balance_obj_t * bobj);
 
-void      p8est_balance_obj_set_method (p8est_balance_obj_t *bobj,
-                                        p8est_balance_method_t method);
-p8est_balance_method_t p8est_balance_obj_get_method (p8est_balance_obj_t *bobj);
+void                p8est_balance_obj_set_method (p8est_balance_obj_t * bobj,
+                                                  p8est_balance_method_t
+                                                  method);
+p8est_balance_method_t p8est_balance_obj_get_method (p8est_balance_obj_t *
+                                                     bobj);
 
-void      p8est_balance_obj_set_connect_type (p8est_balance_obj_t *bobj,
-                                              p8est_connect_type_t connect);
-p8est_connect_type_t p8est_balance_obj_get_connect (p8est_balance_obj_t *bobj);
+void                p8est_balance_obj_set_connect (p8est_balance_obj_t *
+                                                   bobj,
+                                                   p8est_connect_type_t
+                                                   connect);
+p8est_connect_type_t p8est_balance_obj_get_connect (p8est_balance_obj_t *
+                                                    bobj);
 
-void      p8est_balance_obj_set_init (p8est_balance_obj_t *bobj,
-                                      p8est_init_t init_fn);
-p8est_init_t p8est_balance_obj_get_init (p8est_balance_obj_t *bobj);
+void                p8est_balance_obj_set_init (p8est_balance_obj_t * bobj,
+                                                p8est_init_t init_fn);
+p8est_init_t        p8est_balance_obj_get_init (p8est_balance_obj_t * bobj);
 
-void      p8est_balance_obj_set_replace (p8est_balance_obj_t *bobj,
-                                         p8est_replace_t replace_fn);
-p8est_replace_t p8est_balance_obj_get_replace (p8est_balance_obj_t *bobj);
+void                p8est_balance_obj_set_replace (p8est_balance_obj_t * bobj,
+                                                   p8est_replace_t
+                                                   replace_fn);
+p8est_replace_t     p8est_balance_obj_get_replace (p8est_balance_obj_t *
+                                                   bobj);
 
-void      p8est_balance_obj (p8est_balance_obj_t * bobj, p8est_t *p8est);
-
-
-
-
+void                p8est_balance_obj (p8est_balance_obj_t * bobj,
+                                       p8est_t * p8est);
 
 #endif /* P4EST_BALANCE_OBJ_H */

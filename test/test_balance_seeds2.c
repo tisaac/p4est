@@ -23,10 +23,10 @@
 */
 
 #ifndef P4_TO_P8
-#include <p4est_balance.h>
+#include <p4est_balance_seeds.h>
 #include <p4est_bits.h>
 #else
-#include <p8est_balance.h>
+#include <p8est_balance_seeds.h>
 #include <p8est_bits.h>
 #endif
 

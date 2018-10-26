@@ -1488,6 +1488,10 @@ p4est_quadrant_array_reduced_insert (sc_array_t *array, p4est_quadrant_t *q)
   ssize_t si;
   P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
 
+  if (!q->level) {
+    return;
+  }
+
   si = sc_array_bsearch (array, q, p4est_quadrant_disjoint_parent);
   if (si >= 0) {
     p4est_quadrant_t *p = p4est_quadrant_array_index (array, si);

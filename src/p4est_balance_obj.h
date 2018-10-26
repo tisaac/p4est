@@ -59,40 +59,45 @@ p4est_balance_method_t;
 #define P4EST_BALANCE_STR_SORT     "sort"
 #define P4EST_BALANCE_STR_TWOROUND "tworound"
 
-/** Names for each notify method */
+/** The method that will be used if the user chooses P4EST_BALANCE_DEFAULT */
+extern p4est_balance_method_t p4est_balance_method_default;
 
-extern p4est_balance_method_t   p4est_balance_method_default = P4EST_BALANCE_SORT;
+/** Names for each notify method */
 extern const char  *p4est_balance_method_strings[P4EST_BALANCE_NUM_METHODS];
 
-p4est_balance_obj_t    *p4est_balance_obj_new (sc_MPI_Comm mpicomm);
-void      p4est_balance_obj_destroy (p4est_balance_obj_t * bobj);
+p4est_balance_obj_t *p4est_balance_obj_new (sc_MPI_Comm mpicomm);
+void                p4est_balance_obj_destroy (p4est_balance_obj_t * bobj);
 
 sc_MPI_Comm         p4est_balance_obj_get_comm (p4est_balance_obj_t * notify);
 
-void      p4est_balance_obj_set_stats (p4est_balance_obj_t * bobj,
-                                       sc_statistics_t * stats);
-sc_statistics_t *p4est_balance_obj_get_stats (p4est_balance_obj_t * bobj);
+void                p4est_balance_obj_set_stats (p4est_balance_obj_t * bobj,
+                                                 sc_statistics_t * stats);
+sc_statistics_t    *p4est_balance_obj_get_stats (p4est_balance_obj_t * bobj);
 
-void      p4est_balance_obj_set_method (p4est_balance_obj_t *bobj,
-                                        p4est_balance_method_t method);
-p4est_balance_method_t p4est_balance_obj_get_method (p4est_balance_obj_t *bobj);
+void                p4est_balance_obj_set_method (p4est_balance_obj_t * bobj,
+                                                  p4est_balance_method_t
+                                                  method);
+p4est_balance_method_t p4est_balance_obj_get_method (p4est_balance_obj_t *
+                                                     bobj);
 
-void      p4est_balance_obj_set_connect_type (p4est_balance_obj_t *bobj,
-                                              p4est_connect_type_t connect);
-p4est_connect_type_t p4est_balance_obj_get_connect (p4est_balance_obj_t *bobj);
+void                p4est_balance_obj_set_connect (p4est_balance_obj_t *
+                                                   bobj,
+                                                   p4est_connect_type_t
+                                                   connect);
+p4est_connect_type_t p4est_balance_obj_get_connect (p4est_balance_obj_t *
+                                                    bobj);
 
-void      p4est_balance_obj_set_init (p4est_balance_obj_t *bobj,
-                                      p4est_init_t init_fn);
-p4est_init_t p4est_balance_obj_get_init (p4est_balance_obj_t *bobj);
+void                p4est_balance_obj_set_init (p4est_balance_obj_t * bobj,
+                                                p4est_init_t init_fn);
+p4est_init_t        p4est_balance_obj_get_init (p4est_balance_obj_t * bobj);
 
-void      p4est_balance_obj_set_replace (p4est_balance_obj_t *bobj,
-                                         p4est_replace_t replace_fn);
-p4est_replace_t p4est_balance_obj_get_replace (p4est_balance_obj_t *bobj);
+void                p4est_balance_obj_set_replace (p4est_balance_obj_t * bobj,
+                                                   p4est_replace_t
+                                                   replace_fn);
+p4est_replace_t     p4est_balance_obj_get_replace (p4est_balance_obj_t *
+                                                   bobj);
 
-void      p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t *p4est);
-
-
-
-
+void                p4est_balance_obj (p4est_balance_obj_t * bobj,
+                                       p4est_t * p4est);
 
 #endif /* P4EST_BALANCE_OBJ_H */

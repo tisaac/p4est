@@ -23,11 +23,13 @@
 */
 
 #ifdef P4_TO_P8
+#include <p8est_balance_obj.h>
 #include <p8est_extended.h>
 #include <p8est_algorithms.h>
 #include <p8est_communication.h>
 #include <p8est_bits.h>
 #else
+#include <p4est_balance_obj.h>
 #include <p4est_extended.h>
 #include <p4est_algorithms.h>
 #include <p4est_communication.h>
@@ -153,8 +155,7 @@ p4est_balance_schedule (p4est_t * p4est, p4est_balance_peer_t * peers,
 }
 
 void
-p4est_balance_tworound (p4est_t * p4est, p4est_connect_type_t btype,
-                        p4est_init_t init_fn, p4est_replace_t replace_fn)
+p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 {
   const int           rank = p4est->mpirank;
   const int           num_procs = p4est->mpisize;
@@ -230,8 +231,15 @@ p4est_balance_tworound (p4est_t * p4est, p4est_connect_type_t btype,
 #endif /* P4EST_ENABLE_MPI */
   sc_notify_t        *notify = NULL;
   int                 own_notify = 0;
+  p4est_connect_type_t btype;
+  p4est_init_t init_fn;
+  p4est_replace_t replace_fn;
 
   P4EST_FUNC_SNAP (p4est, &snap);
+
+  btype = p4est_balance_obj_get_connect (bobj);
+  init_fn = p4est_balance_obj_get_init (bobj);
+  replace_fn = p4est_balance_obj_get_replace (bobj);
 
 #ifndef P4_TO_P8
   P4EST_ASSERT (btype == P4EST_CONNECT_FACE || btype == P4EST_CONNECT_CORNER);

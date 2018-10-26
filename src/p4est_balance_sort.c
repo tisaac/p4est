@@ -23,6 +23,7 @@
 */
 
 #ifdef P4_TO_P8
+#include <p8est_balance_obj.h>
 #include <p8est_extended.h>
 #include <p8est_bits.h>
 #include <p8est_search.h>
@@ -30,6 +31,7 @@
 #include <p8est_algorithms.h>
 #include <p8est_balance_seeds.h>
 #else
+#include <p4est_balance_obj.h>
 #include <p4est_extended.h>
 #include <p4est_bits.h>
 #include <p4est_search.h>
@@ -1790,8 +1792,7 @@ p4est_balance_sort_complete (p4est_t *p4est, int flt, int llt, int num_trees,
 }
 
 void
-p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
-                    p4est_init_t init_fn, p4est_replace_t replace_fn)
+p4est_balance_sort (p4est_balance_obj_t *bobj, p4est_t *p4est)
 {
   p4est_topidx_t t, num_trees;
   p4est_topidx_t flt = p4est->first_local_tree;
@@ -1809,8 +1810,15 @@ p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
   sc_array_t *neigh_bufs;
   sc_array_t *tree_bufs;
   sc_array_t sort_bufs[2];
+  p4est_connect_type_t btype;
+  p4est_init_t init_fn;
+  p4est_replace_t replace_fn;
 
   P4EST_FUNC_SNAP (p4est, &snap);
+
+  btype = p4est_balance_obj_get_connect (bobj);
+  init_fn = p4est_balance_obj_get_init (bobj);
+  replace_fn = p4est_balance_obj_get_replace (bobj);
 
   /* first figure out the parallel neighborhood */
   num_trees = SC_MAX (0, llt + 1 - flt);

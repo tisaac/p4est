@@ -437,7 +437,10 @@
 #define p4est_mesh_face_neighbor_data   p8est_mesh_face_neighbor_data
 
 /* functions and objects in p4est_balance_seeds */
+#define p4est_balance_obj_s             p8est_balance_obj_s
+#define p4est_balance_obj_t             p8est_balance_obj_t
 #define p4est_balance_method_t          p8est_balance_method_t
+#define p4est_balance_method_default    p8est_balance_method_default
 #define p4est_balance_method_strings    p8est_balance_method_strings
 #define p4est_balance_obj_new           p8est_balance_obj_new
 #define p4est_balance_obj_destroy       p8est_balance_obj_destroy
@@ -446,6 +449,8 @@
 #define p4est_balance_obj_get_stats     p8est_balance_obj_get_stats
 #define p4est_balance_obj_set_method    p8est_balance_obj_set_method
 #define p4est_balance_obj_get_method    p8est_balance_obj_get_method
+#define p4est_balance_obj_set_connect   p8est_balance_obj_set_connect
+#define p4est_balance_obj_get_connect   p8est_balance_obj_get_connect
 #define p4est_balance_obj_set_init      p8est_balance_obj_set_init
 #define p4est_balance_obj_get_init      p8est_balance_obj_get_init
 #define p4est_balance_obj_set_replace   p8est_balance_obj_set_replace
