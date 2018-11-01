@@ -91,9 +91,9 @@ void                p8est_balance_obj_set_init (p8est_balance_obj_t * bobj,
                                                 p8est_init_t init_fn);
 p8est_init_t        p8est_balance_obj_get_init (p8est_balance_obj_t * bobj);
 
-void                p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj, p4est_inspect_t * inspect);
+void                p8est_balance_obj_set_inspect (p8est_balance_obj_t * bobj, p8est_inspect_t * inspect);
 
-p4est_inspect_t *   p4est_balance_obj_get_inspect (p4est_balance_obj_t * bobj);
+p4est_inspect_t *   p8est_balance_obj_get_inspect (p8est_balance_obj_t * bobj);
 
 void                p8est_balance_obj_set_replace (p8est_balance_obj_t * bobj,
                                                    p8est_replace_t
