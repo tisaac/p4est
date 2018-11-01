@@ -52,7 +52,8 @@ p4est_balance_peer_t;
 
 static void
 p4est_balance_response (p4est_t * p4est, p4est_balance_peer_t * peer,
-                        p4est_connect_type_t balance, sc_array_t * borders)
+                        p4est_connect_type_t balance, sc_array_t * borders,
+						p4est_balance_obj_t * bobj)
 {
   sc_array_t         *first_seeds = sc_array_new (sizeof (p4est_quadrant_t));
 
@@ -69,10 +70,10 @@ p4est_balance_response (p4est_t * p4est, p4est_balance_peer_t * peer,
           first_seeds->elem_size * first_seeds->elem_count);
   sc_array_destroy (first_seeds);
 
-  if (p4est->inspect) {
-    p4est->inspect->balance_comm_sent += peer->send_second.elem_count;
+  if (bobj->inspect) {
+    bobj->inspect->balance_comm_sent += peer->send_second.elem_count;
     if (peer->send_second.elem_count) {
-      p4est->inspect->balance_comm_nzpeers++;
+      bobj->inspect->balance_comm_nzpeers++;
     }
   }
 }
@@ -330,12 +331,12 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   nextlow.level = P4EST_QMAXLEVEL;
 
   /* start balance_A timing */
-  if (p4est->inspect != NULL) {
-    p4est->inspect->balance_A = -sc_MPI_Wtime ();
-    p4est->inspect->balance_A_count_in = 0;
-    p4est->inspect->balance_A_count_out = 0;
-    p4est->inspect->use_B = 0;
-    pre_adapt_flags = p4est->inspect->pre_adapt_flags;
+  if (bobj->inspect != NULL) {
+    bobj->inspect->balance_A = -sc_MPI_Wtime ();
+    bobj->inspect->balance_A_count_in = 0;
+    bobj->inspect->balance_A_count_out = 0;
+    bobj->inspect->use_B = 0;
+    pre_adapt_flags = bobj->inspect->pre_adapt_flags;
   }
 
   /* loop over all local trees to assemble first send list */
@@ -574,21 +575,21 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   }
 
   /* end balance_A, start balance_comm */
-  if (p4est->inspect != NULL) {
-    p4est->inspect->balance_A += sc_MPI_Wtime ();
-    p4est->inspect->balance_comm = -sc_MPI_Wtime ();
-    p4est->inspect->balance_comm_sent = 0;
-    p4est->inspect->balance_comm_nzpeers = 0;
+  if (bobj->inspect != NULL) {
+    bobj->inspect->balance_A += sc_MPI_Wtime ();
+    bobj->inspect->balance_comm = -sc_MPI_Wtime ();
+    bobj->inspect->balance_comm_sent = 0;
+    bobj->inspect->balance_comm_nzpeers = 0;
     for (k = 0; k < 2; ++k) {
-      p4est->inspect->balance_load_sends[k] = 0;
-      p4est->inspect->balance_load_receives[k] = 0;
-      p4est->inspect->balance_zero_sends[k] = 0;
-      p4est->inspect->balance_zero_receives[k] = 0;
+      bobj->inspect->balance_load_sends[k] = 0;
+      bobj->inspect->balance_load_receives[k] = 0;
+      bobj->inspect->balance_zero_sends[k] = 0;
+      bobj->inspect->balance_zero_receives[k] = 0;
     }
-    notify = p4est->inspect->notify;
+    notify = bobj->inspect->notify;
   }
   if (!notify) {
-    notify = sc_notify_new (p4est->mpicomm);
+    notify = sc_notify_new (bobj->mpicomm);
     own_notify = 1;
   }
 
@@ -630,8 +631,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
     }
   }
 
-  if (p4est->inspect && p4est->inspect->stats) {
-    sc_notify_set_stats (notify, p4est->inspect->stats);
+  if (bobj->inspect && bobj->inspect->stats) {
+    sc_notify_set_stats (notify, bobj->inspect->stats);
   }
   sc_notify_payload (receivers, senders, in_counts, out_counts, 0, notify);
   sc_array_destroy (in_counts);
@@ -752,7 +753,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 #endif /* P4EST_ENABLE_DEBUG */
 
       /* process incoming quadrants to interleave with communication */
-      p4est_balance_response (p4est, peer, btype, borders);
+      p4est_balance_response (p4est, peer, btype, borders, bobj);
       qcount = peer->send_second.elem_count;
       if (qcount > 0) {
         P4EST_LDEBUGF ("Balance B send %llu quadrants to %d\n",
@@ -871,18 +872,18 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 #endif /* P4EST_ENABLE_MPI */
 
   /* end balance_comm, start balance_B */
-  if (p4est->inspect != NULL) {
-    p4est->inspect->balance_comm += sc_MPI_Wtime ();
-    p4est->inspect->balance_B = -sc_MPI_Wtime ();
-    p4est->inspect->balance_B_count_in = 0;
-    p4est->inspect->balance_B_count_out = 0;
-    p4est->inspect->use_B = 1;
+  if (bobj->inspect != NULL) {
+    bobj->inspect->balance_comm += sc_MPI_Wtime ();
+    bobj->inspect->balance_B = -sc_MPI_Wtime ();
+    bobj->inspect->balance_B_count_in = 0;
+    bobj->inspect->balance_B_count_out = 0;
+    bobj->inspect->use_B = 1;
 #ifdef P4EST_ENABLE_MPI
     for (k = 0; k < 2; ++k) {
-      p4est->inspect->balance_load_sends[k] = send_load[k];
-      p4est->inspect->balance_load_receives[k] = recv_load[k];
-      p4est->inspect->balance_zero_sends[k] = send_zero[k];
-      p4est->inspect->balance_zero_receives[k] = recv_zero[k];
+      bobj->inspect->balance_load_sends[k] = send_load[k];
+      bobj->inspect->balance_load_receives[k] = recv_load[k];
+      bobj->inspect->balance_zero_sends[k] = send_zero[k];
+      bobj->inspect->balance_zero_receives[k] = recv_zero[k];
     }
 #endif
   }
@@ -965,8 +966,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   }
 
   /* end balance_B */
-  if (p4est->inspect != NULL) {
-    p4est->inspect->balance_B += sc_MPI_Wtime ();
+  if (bobj->inspect != NULL) {
+    bobj->inspect->balance_B += sc_MPI_Wtime ();
   }
 
 #ifdef P4EST_ENABLE_MPI
