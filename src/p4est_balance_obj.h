@@ -103,6 +103,9 @@ void                p4est_balance_set_adapt_flags (p4est_balance_obj_t *bobj,
 void                p4est_balance_get_adapt_flags (p4est_balance_obj_t *bobj,
                                                    const int8_t *flags);
 
+void                p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj, p4est_inspect_t * inspect);
+
+p4est_inspect_t *   p4est_balance_obj_get_inspect (p4est_balance_obj_t * bobj);
 
 void                p4est_balance_obj (p4est_balance_obj_t * bobj,
                                        p4est_t * p4est);
