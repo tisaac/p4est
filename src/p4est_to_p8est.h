@@ -455,6 +455,8 @@
 #define p4est_balance_obj_get_init      p8est_balance_obj_get_init
 #define p4est_balance_obj_set_replace   p8est_balance_obj_set_replace
 #define p4est_balance_obj_get_replace   p8est_balance_obj_get_replace
+#define p4est_balance_obj_set_inspect   p8est_balance_obj_set_inspect
+#define p4est_balance_obj_get_inspect   p8est_balance_obj_get_inspect
 #define p4est_balance_obj               p8est_balance_obj
 #define P4EST_BALANCE_DEFAULT           P8EST_BALANCE_DEFAULT
 #define P4EST_BALANCE_SORT              P8EST_BALANCE_SORT
