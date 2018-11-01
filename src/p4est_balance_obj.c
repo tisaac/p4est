@@ -26,10 +26,12 @@
 #include <p4est_balance_obj.h>
 #include <p4est_algorithms.h>
 #include <p4est_communication.h>
+#include <p4est.h>
 #else
 #include <p8est_balance_obj.h>
 #include <p8est_algorithms.h>
 #include <p8est_communication.h>
+#include <p8est.h>
 #endif
 
 struct p4est_balance_obj_s
@@ -40,6 +42,7 @@ struct p4est_balance_obj_s
   p4est_connect_type_t connect;
   p4est_init_t        init_fn;
   p4est_replace_t     replace_fn;
+  p4est_inspect_t    *inspect;
 };
 
 const char         *p4est_balance_method_strings[] = {
@@ -72,6 +75,18 @@ sc_MPI_Comm
 p4est_balance_obj_get_comm (p4est_balance_obj_t * obj)
 {
   return obj->comm;
+}
+
+void
+p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj, p4est_inspect_t * inspect)
+{
+  bobj->inspect = inspect;
+}
+
+p4est_inspect_t *
+p4est_balance_obj_get_inspect (p4est_balance_obj_t * bobj)
+{
+  return bobj->inspect;
 }
 
 void
@@ -183,8 +198,8 @@ p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t * p4est)
   }
   /* compute global number of quadrants */
   p4est_comm_count_quadrants (p4est);
-  if (p4est->inspect) {
-    pre_adapt_flags = p4est->inspect->pre_adapt_flags;
+  if (bobj->inspect) {
+    pre_adapt_flags = bobj->inspect->pre_adapt_flags;
   }
   P4EST_ASSERT (pre_adapt_flags || p4est->global_num_quadrants >= old_gnq);
   if (pre_adapt_flags || old_gnq != p4est->global_num_quadrants) {
