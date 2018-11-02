@@ -95,6 +95,14 @@ void                p8est_balance_obj_set_inspect (p8est_balance_obj_t * bobj, p
 
 p4est_inspect_t *   p8est_balance_obj_get_inspect (p8est_balance_obj_t * bobj);
 
+void                p8est_balance_obj_set_notify (p8est_balance_obj_t * bobj, sc_notify_t * notify);
+
+sc_notify_t *       p8est_balance_obj_get_notify (p8est_balance_obj_t * bobj);
+
+void                p8est_balance_obj_set_adapt_flags (p8est_balance_obj_t * bobj, const int8_t* adapt_flags);
+
+const int8_t*       p8est_balance_obj_get_adapt_flags (p8est_balance_obj_t * bobj);
+
 void                p8est_balance_obj_set_replace (p8est_balance_obj_t * bobj,
                                                    p8est_replace_t
                                                    replace_fn);

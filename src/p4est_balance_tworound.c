@@ -49,15 +49,269 @@ typedef struct
 }
 p4est_balance_peer_t;
 
+static void
+p4est_balance_border (p4est_balance_obj_t *bobj, p4est_t * p4est,
+                      p4est_connect_type_t btype, p4est_topidx_t which_tree,
+                      p4est_init_t init_fn, p4est_replace_t replace_fn,
+                      sc_array_t * borders,
+                      double *balance_B_count_in,
+                      double *balance_B_count_out)
+{
+  size_t              iz, jz, kz;
+  size_t              incount;
+  size_t              count_already_inlist, count_already_outlist;
+  size_t              count_ancestor_inlist;
+  p4est_tree_t       *tree;
+  p4est_quadrant_t   *q, *p, *r;
+  p4est_quadrant_t    tempq, tempp;
+  sc_array_t          qview;
+  sc_array_t         *inlist, *flist, *tquadrants;
+  sc_array_t          tqview;
+  size_t              tqoffset, fcount;
+  p4est_topidx_t      first_tree = p4est->first_local_tree;
+  size_t              num_added, num_this_added;
+  int                 bound;
+  ssize_t             tqindex;
+  size_t              tqorig;
+  sc_mempool_t       *list_alloc, *qpool;
+  /* get this tree's border */
+  sc_array_t         *qarray = (sc_array_t *) sc_array_index (borders,
+                                                              which_tree -
+                                                              first_tree);
+  size_t              qcount = qarray->elem_count;
+
+  if (!qcount) {
+    /* nothing to be done */
+    return;
+  }
+
+  P4EST_QUADRANT_INIT (&tempq);
+  P4EST_QUADRANT_INIT (&tempp);
+
+  /* set up balance machinery */
+
+  if (btype == P4EST_CONNECT_FULL) {
+    bound = (1 << P4EST_DIM);
+  }
+#ifdef P4_TO_P8
+  else if (btype == P8EST_CONNECT_EDGE) {
+    bound = (1 << P4EST_DIM) - 1;
+  }
+#endif
+  else {
+    bound = P4EST_DIM + 1;
+  }
+
+  P4EST_ASSERT (which_tree >= p4est->first_local_tree);
+  P4EST_ASSERT (which_tree <= p4est->last_local_tree);
+
+  tree = p4est_tree_array_index (p4est->trees, which_tree);
+  tquadrants = &(tree->quadrants);
+  tqorig = tquadrants->elem_count;
+  tqoffset = 0;
+  sc_array_init_view (&tqview, tquadrants, tqoffset,
+                      tquadrants->elem_count - tqoffset);
+
+  qpool = p4est->quadrant_pool;
+
+  count_already_inlist = count_already_outlist = 0;
+  count_ancestor_inlist = 0;
+  num_added = 0;
+
+  /* initialize temporary storage */
+  list_alloc = sc_mempool_new (sizeof (sc_link_t));
+
+  inlist = sc_array_new (sizeof (p4est_quadrant_t));
+  flist = sc_array_new (sizeof (p4est_quadrant_t));
+
+  /* sort the border and remove duplicates */
+  sc_array_sort (qarray, p4est_quadrant_compare);
+  jz = 1;                       /* number included */
+  kz = 0;                       /* number skipped */
+  p = p4est_quadrant_array_index (qarray, 0);
+  P4EST_ASSERT (p4est_quadrant_is_valid (p));
+  for (iz = 1; iz < qcount; iz++) {
+    q = p4est_quadrant_array_index (qarray, iz);
+    P4EST_ASSERT (p4est_quadrant_is_extended (q));
+    if (!p4est_quadrant_is_equal (q, p)) {
+      p++;
+      jz++;
+      if (kz) {
+        *p = *q;
+      }
+    }
+    else {
+      kz++;
+    }
+  }
+  P4EST_ASSERT (kz + jz == qcount);
+  sc_array_resize (qarray, jz);
+  qcount = jz;
+
+  /* step through border */
+  for (iz = 0; iz < qcount; iz++) {
+    p = p4est_quadrant_array_index (qarray, iz);
+
+    if (p4est_quadrant_compare (p, &(tree->first_desc)) < 0 &&
+        !p4est_quadrant_is_ancestor (p, &(tree->first_desc))) {
+      continue;
+    }
+    if (p4est_quadrant_compare (p, &(tree->last_desc)) > 0) {
+      continue;
+    }
+
+    P4EST_ASSERT (p4est_quadrant_is_valid (p));
+
+    /* get a view of all of the quads that are descended from this quad */
+    jz = iz + 1;
+    kz = jz;
+
+    if (kz < qcount) {
+      q = p4est_quadrant_array_index (qarray, kz);
+    }
+
+    while (kz < qcount && p4est_quadrant_is_ancestor (p, q)) {
+      kz++;
+
+      P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
+
+      if (kz < qcount) {
+        q = p4est_quadrant_array_index (qarray, kz);
+      }
+    }
+
+    incount = kz - jz;
+    if (!incount) {
+      continue;
+    }
+
+    /* find p in tquadrants */
+    tqindex = sc_array_bsearch (&tqview, p, p4est_quadrant_compare);
+
+    P4EST_ASSERT (tqindex >= 0);
+
+    /* copy everything before p into flist */
+    if (tqindex) {
+      fcount = flist->elem_count;
+      sc_array_resize (flist, fcount + tqindex);
+      memcpy (sc_array_index (flist, fcount),
+              tqview.array, tqindex * sizeof (p4est_quadrant_t));
+    }
+
+    /* update the view of tquadrants to be everything past p */
+    tqindex += tqoffset;        /* tqindex is the index of p in tquadrants */
+    tqoffset = tqindex + 1;
+    sc_array_init_view (&tqview, tquadrants, tqoffset, tqorig - tqoffset);
+
+    /* first, remove p */
+    q = p4est_quadrant_array_index (tquadrants, tqindex);
+    P4EST_ASSERT (p4est_quadrant_is_equal (q, p));
+    /* reset the data, decrement level count */
+    if (replace_fn == NULL) {
+      p4est_quadrant_free_data (p4est, q);
+    }
+    else {
+      tempp = *q;
+    }
+    --tree->quadrants_per_level[q->level];
+
+    /* get all of the quadrants that descend from p into inlist */
+    sc_array_init_view (&qview, qarray, jz, incount);
+    sc_array_resize (inlist, 1);
+    q = p4est_quadrant_array_index (inlist, 0);
+    r = p4est_quadrant_array_index (&qview, 0);
+    P4EST_ASSERT (p4est_quadrant_child_id (r) == 0);
+    *q = *r;
+    for (jz = 1; jz < incount; jz++) {
+      r = p4est_quadrant_array_index (&qview, jz);
+      P4EST_ASSERT (p4est_quadrant_child_id (r) == 0);
+      p4est_nearest_common_ancestor (r, q, &tempq);
+      if (tempq.level >= SC_MIN (r->level, q->level) - 1) {
+        if (r->level > q->level) {
+          *q = *r;
+        }
+        continue;
+      }
+      q = (p4est_quadrant_t *) sc_array_push (inlist);
+      *q = *r;
+    }
+
+    fcount = flist->elem_count;
+
+    /* balance them within the containing quad */
+    p4est_balance_kernel (inlist, p, 0, bound, qpool, list_alloc,
+                          NULL, NULL,
+                          &count_already_inlist,
+                          &count_already_outlist,
+                          &count_ancestor_inlist);
+    p4est_complete_kernel (inlist, p, NULL, NULL, flist);
+
+    /* count the amount we've added (-1 because we subtract p) */
+    num_this_added = flist->elem_count - 1 - fcount;
+    num_added += num_this_added;
+
+    /* initialize */
+    for (jz = fcount; jz < flist->elem_count; jz++) {
+      q = p4est_quadrant_array_index (flist, jz);
+      P4EST_ASSERT (p4est_quadrant_is_ancestor (p, q));
+      ++tree->quadrants_per_level[q->level];
+      tree->maxlevel = (int8_t) SC_MAX (tree->maxlevel, q->level);
+      p4est_quadrant_init_data (p4est, which_tree, q, init_fn);
+    }
+    if (replace_fn != NULL) {
+      p4est_replace_recursive (p4est, which_tree, flist, fcount,
+                               flist->elem_count, &tempp, init_fn,
+                               replace_fn);
+    }
+
+    /* skip over the quadrants that we just operated on */
+    iz = kz - 1;
+  }
+
+  /* copy the remaining tquadrants to flist */
+  if (tqoffset < tqorig) {
+    fcount = flist->elem_count;
+    sc_array_resize (flist, fcount + tqorig - tqoffset);
+    memcpy (sc_array_index (flist, fcount),
+            tqview.array, (tqorig - tqoffset) * sizeof (p4est_quadrant_t));
+  }
+
+  /* copy flist into tquadrants */
+  sc_array_resize (tquadrants, flist->elem_count);
+  memcpy (tquadrants->array, flist->array,
+          flist->elem_count * flist->elem_size);
+
+  sc_mempool_destroy (list_alloc);
+  P4EST_ASSERT (tqorig + num_added == tquadrants->elem_count);
+
+  /* print more statistics */
+  P4EST_VERBOSEF
+    ("Tree border %lld inlist %llu outlist %llu ancestor %llu insert %llu\n",
+     (long long) which_tree, (unsigned long long) count_already_inlist,
+     (unsigned long long) count_already_outlist,
+     (unsigned long long) count_ancestor_inlist,
+     (unsigned long long) num_added);
+
+  sc_array_destroy (inlist);
+  sc_array_destroy (flist);
+
+  P4EST_ASSERT (p4est_tree_is_complete (tree));
+
+  *balance_B_count_in += count_already_inlist;
+  *balance_B_count_in += count_ancestor_inlist;
+  *balance_B_count_out += count_already_outlist;
+}
 
 static void
 p4est_balance_response (p4est_t * p4est, p4est_balance_peer_t * peer,
                         p4est_connect_type_t balance, sc_array_t * borders,
-						p4est_balance_obj_t * bobj)
+                        p4est_balance_obj_t * bobj,
+                        double *balance_comm_sent,
+                        double *balance_comm_nzpeers)
 {
   sc_array_t         *first_seeds = sc_array_new (sizeof (p4est_quadrant_t));
 
-/* compute and uniqify overlap quadrants */
+  /* compute and uniqify overlap quadrants */
   p4est_tree_compute_overlap (p4est, &peer->recv_first,
                               &peer->send_second, balance, borders,
                               first_seeds);
@@ -70,12 +324,8 @@ p4est_balance_response (p4est_t * p4est, p4est_balance_peer_t * peer,
           first_seeds->elem_size * first_seeds->elem_count);
   sc_array_destroy (first_seeds);
 
-  if (bobj->inspect) {
-    bobj->inspect->balance_comm_sent += peer->send_second.elem_count;
-    if (peer->send_second.elem_count) {
-      bobj->inspect->balance_comm_nzpeers++;
-    }
-  }
+  *balance_comm_sent += peer->send_second.elem_count;
+  *balance_comm_nzpeers += 1;
 }
 
 /** Check if the insulation layer of a quadrant overlaps anybody.
@@ -235,12 +485,29 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   p4est_connect_type_t btype;
   p4est_init_t init_fn;
   p4est_replace_t replace_fn;
+  double              balance_A_time;
+  double              balance_A_count_in;
+  double              balance_A_count_out;
+  double              balance_B_time;
+  double              balance_B_count_in;
+  double              balance_B_count_out;
+  double              balance_comm_time;
+  double              balance_comm_sent;
+  double              balance_comm_nzpeers;
+  double              balance_load_sends[2];
+  double              balance_load_receives[2];
+  double              balance_zero_sends[2];
+  double              balance_zero_receives[2];
+  sc_statistics_t    *stats = NULL;
 
   P4EST_FUNC_SNAP (p4est, &snap);
 
   btype = p4est_balance_obj_get_connect (bobj);
   init_fn = p4est_balance_obj_get_init (bobj);
   replace_fn = p4est_balance_obj_get_replace (bobj);
+  stats = p4est_balance_obj_get_stats (bobj);
+  pre_adapt_flags = p4est_balance_obj_get_adapt_flags (bobj);
+  notify = p4est_balance_obj_get_notify (bobj);
 
 #ifndef P4_TO_P8
   P4EST_ASSERT (btype == P4EST_CONNECT_FACE || btype == P4EST_CONNECT_CORNER);
@@ -248,6 +515,65 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   P4EST_ASSERT (btype == P8EST_CONNECT_FACE || btype == P8EST_CONNECT_EDGE ||
                 btype == P8EST_CONNECT_CORNER);
 #endif
+
+  {
+    sc_statistics_t *stats = NULL;
+
+    stats = p4est_balance_obj_get_stats (bobj);
+    if (stats) {
+      if (!sc_statistics_has (stats, "balance_A time")) {
+        sc_statistics_add_empty (stats, "balance_A time");
+      }
+      if (!sc_statistics_has (stats, "balance_A count in")) {
+        sc_statistics_add_empty (stats, "balance_A count in");
+      }
+      if (!sc_statistics_has (stats, "balance_A count out")) {
+        sc_statistics_add_empty (stats, "balance_A count out");
+      }
+      if (!sc_statistics_has (stats, "balance comm time")) {
+        sc_statistics_add_empty (stats, "balance comm time");
+      }
+      if (!sc_statistics_has (stats, "balance comm sent")) {
+        sc_statistics_add_empty (stats, "balance comm sent");
+      }
+      if (!sc_statistics_has (stats, "balance comm nzpeers")) {
+        sc_statistics_add_empty (stats, "balance comm nzpeers");
+      }
+      if (!sc_statistics_has (stats, "balance load sends 0")) {
+        sc_statistics_add_empty (stats, "balance load sends 0");
+      }
+      if (!sc_statistics_has (stats, "balance load recvs 0")) {
+        sc_statistics_add_empty (stats, "balance load recvs 0");
+      }
+      if (!sc_statistics_has (stats, "balance zero sends 0")) {
+        sc_statistics_add_empty (stats, "balance zero sends 0");
+      }
+      if (!sc_statistics_has (stats, "balance zero recvs 0")) {
+        sc_statistics_add_empty (stats, "balance zero recvs 0");
+      }
+      if (!sc_statistics_has (stats, "balance load sends 1")) {
+        sc_statistics_add_empty (stats, "balance load sends 1");
+      }
+      if (!sc_statistics_has (stats, "balance load recvs 1")) {
+        sc_statistics_add_empty (stats, "balance load recvs 1");
+      }
+      if (!sc_statistics_has (stats, "balance zero sends 1")) {
+        sc_statistics_add_empty (stats, "balance zero sends 1");
+      }
+      if (!sc_statistics_has (stats, "balance zero recvs 1")) {
+        sc_statistics_add_empty (stats, "balance zero recvs 1");
+      }
+      if (!sc_statistics_has (stats, "balance_B time")) {
+        sc_statistics_add_empty (stats, "balance_B time");
+      }
+      if (!sc_statistics_has (stats, "balance_B count in")) {
+        sc_statistics_add_empty (stats, "balance_B count in");
+      }
+      if (!sc_statistics_has (stats, "balance_B count out")) {
+        sc_statistics_add_empty (stats, "balance_B count out");
+      }
+    }
+  }
 
 #ifdef P4EST_ENABLE_DEBUG
   data_pool_size = 0;
@@ -331,12 +657,11 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   nextlow.level = P4EST_QMAXLEVEL;
 
   /* start balance_A timing */
-  if (bobj->inspect != NULL) {
-    bobj->inspect->balance_A = -sc_MPI_Wtime ();
-    bobj->inspect->balance_A_count_in = 0;
-    bobj->inspect->balance_A_count_out = 0;
-    bobj->inspect->use_B = 0;
-    pre_adapt_flags = bobj->inspect->pre_adapt_flags;
+  balance_A_time = -sc_MPI_Wtime ();
+  balance_A_count_in = 0;
+  balance_A_count_out = 0;
+  if (p4est->inspect != NULL) {
+    p4est->inspect->use_B = 0;
   }
 
   /* loop over all local trees to assemble first send list */
@@ -575,21 +900,18 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   }
 
   /* end balance_A, start balance_comm */
-  if (bobj->inspect != NULL) {
-    bobj->inspect->balance_A += sc_MPI_Wtime ();
-    bobj->inspect->balance_comm = -sc_MPI_Wtime ();
-    bobj->inspect->balance_comm_sent = 0;
-    bobj->inspect->balance_comm_nzpeers = 0;
-    for (k = 0; k < 2; ++k) {
-      bobj->inspect->balance_load_sends[k] = 0;
-      bobj->inspect->balance_load_receives[k] = 0;
-      bobj->inspect->balance_zero_sends[k] = 0;
-      bobj->inspect->balance_zero_receives[k] = 0;
-    }
-    notify = bobj->inspect->notify;
+  balance_A_time += sc_MPI_Wtime ();
+  balance_comm_time = -sc_MPI_Wtime ();
+  balance_comm_sent = 0;
+  balance_comm_nzpeers = 0;
+  for (k = 0; k < 2; ++k) {
+    balance_load_sends[k] = 0;
+    balance_load_receives[k] = 0;
+    balance_zero_sends[k] = 0;
+    balance_zero_receives[k] = 0;
   }
   if (!notify) {
-    notify = sc_notify_new (bobj->mpicomm);
+    notify = sc_notify_new (p4est->mpicomm);
     own_notify = 1;
   }
 
@@ -631,8 +953,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
     }
   }
 
-  if (bobj->inspect && bobj->inspect->stats) {
-    sc_notify_set_stats (notify, bobj->inspect->stats);
+  if (stats) {
+    sc_notify_set_stats (notify, stats);
   }
   sc_notify_payload (receivers, senders, in_counts, out_counts, 0, notify);
   sc_array_destroy (in_counts);
@@ -753,7 +1075,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 #endif /* P4EST_ENABLE_DEBUG */
 
       /* process incoming quadrants to interleave with communication */
-      p4est_balance_response (p4est, peer, btype, borders, bobj);
+      p4est_balance_response (p4est, peer, btype, borders, bobj, &balance_comm_sent,
+                              &balance_comm_nzpeers);
       qcount = peer->send_second.elem_count;
       if (qcount > 0) {
         P4EST_LDEBUGF ("Balance B send %llu quadrants to %d\n",
@@ -795,7 +1118,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   qarray = &peer->recv_first;
   sc_array_resize (qarray, qcount);
   memcpy (qarray->array, peer->send_first.array, qbytes);
-  p4est_balance_response (p4est, peer, btype, borders, bobj);
+  p4est_balance_response (p4est, peer, btype, borders, bobj, &balance_comm_sent,
+                          &balance_comm_nzpeers);
   qcount = peer->send_second.elem_count;
   peer->recv_second_count = peer->send_second_count = (int) qcount;
   qbytes = qcount * sizeof (p4est_quadrant_t);
@@ -872,20 +1196,20 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 #endif /* P4EST_ENABLE_MPI */
 
   /* end balance_comm, start balance_B */
-  if (bobj->inspect != NULL) {
-    bobj->inspect->balance_comm += sc_MPI_Wtime ();
-    bobj->inspect->balance_B = -sc_MPI_Wtime ();
-    bobj->inspect->balance_B_count_in = 0;
-    bobj->inspect->balance_B_count_out = 0;
-    bobj->inspect->use_B = 1;
+  balance_comm_time += sc_MPI_Wtime ();
+  balance_B_time = -sc_MPI_Wtime ();
+  balance_B_count_in = 0;
+  balance_B_count_out = 0;
 #ifdef P4EST_ENABLE_MPI
-    for (k = 0; k < 2; ++k) {
-      bobj->inspect->balance_load_sends[k] = send_load[k];
-      bobj->inspect->balance_load_receives[k] = recv_load[k];
-      bobj->inspect->balance_zero_sends[k] = send_zero[k];
-      bobj->inspect->balance_zero_receives[k] = recv_zero[k];
-    }
+  for (k = 0; k < 2; ++k) {
+    balance_load_sends[k] = send_load[k];
+    balance_load_receives[k] = recv_load[k];
+    balance_zero_sends[k] = send_zero[k];
+    balance_zero_receives[k] = recv_zero[k];
+  }
 #endif
+  if (p4est->inspect != NULL) {
+    p4est->inspect->use_B = 1;
   }
   if (own_notify) {
     sc_notify_destroy (notify);
@@ -949,7 +1273,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
         (tree_flags[nt] & any_face_flag)) {
       /* we have most probably received quadrants, run sort and balance */
       /* balance the border, add it back into the tree, and linearize */
-      p4est_balance_border (p4est, btype, nt, init_fn, replace_fn, borders);
+      p4est_balance_border (bobj, p4est, btype, nt, init_fn, replace_fn,
+                            borders, &balance_B_count_in, &balance_B_count_out);
       P4EST_VERBOSEF ("Balance tree %lld B %llu to %llu\n",
                       (long long) nt,
                       (unsigned long long) treecount,
@@ -966,9 +1291,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   }
 
   /* end balance_B */
-  if (bobj->inspect != NULL) {
-    bobj->inspect->balance_B += sc_MPI_Wtime ();
-  }
+  balance_B_time += sc_MPI_Wtime ();
 
 #ifdef P4EST_ENABLE_MPI
   /* wait for all send operations */
@@ -1046,6 +1369,26 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
                   p4est->user_data_pool->elem_count);
   }
   P4EST_VERBOSEF ("Balance skipped %lld\n", (long long) skipped);
+
+  if (stats) {
+    sc_statistics_accumulate (stats, "balance_A time", balance_A_time);
+    sc_statistics_accumulate (stats, "balance_A count in", balance_A_count_in);
+    sc_statistics_accumulate (stats, "balance_A count out", balance_A_count_out);
+    sc_statistics_accumulate (stats, "balance comm time", balance_comm_time);
+    sc_statistics_accumulate (stats, "balance comm sent", balance_comm_sent);
+    sc_statistics_accumulate (stats, "balance comm nzpeers", balance_comm_nzpeers);
+    sc_statistics_accumulate (stats, "balance load sends 0", balance_load_sends[0]);
+    sc_statistics_accumulate (stats, "balance load recvs 0", balance_load_receives[0]);
+    sc_statistics_accumulate (stats, "balance zero sends 0", balance_zero_sends[0]);
+    sc_statistics_accumulate (stats, "balance zero recvs 0", balance_zero_receives[0]);
+    sc_statistics_accumulate (stats, "balance load sends 1", balance_load_sends[1]);
+    sc_statistics_accumulate (stats, "balance load recvs 1", balance_load_receives[1]);
+    sc_statistics_accumulate (stats, "balance zero sends 1", balance_zero_sends[1]);
+    sc_statistics_accumulate (stats, "balance zero recvs 1", balance_zero_receives[1]);
+    sc_statistics_accumulate (stats, "balance_B time", balance_B_time);
+    sc_statistics_accumulate (stats, "balance_B count in", balance_B_count_in);
+    sc_statistics_accumulate (stats, "balance_B count out", balance_B_count_out);
+  }
 
   P4EST_FUNC_SHOT (p4est, &snap);
 }

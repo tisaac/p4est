@@ -215,12 +215,12 @@ void                p8est_balance_subtree (p8est_t * p8est,
                                            p4est_topidx_t which_tree,
                                            p8est_init_t init_fn);
 
-void                p8est_balance_border (p8est_t * p8est,
-                                          p8est_connect_type_t btype,
-                                          p4est_topidx_t which_tree,
-                                          p8est_init_t init_fn,
-                                          p8est_replace_t replace_fn,
-                                          sc_array_t * borders);
+void                p8est_replace_recursive (p8est_t * p8est,
+                                             p4est_topidx_t nt, sc_array_t * array,
+                                             size_t start, size_t end,
+                                             p8est_quadrant_t * parent,
+                                             p8est_init_t init_fn,
+                                             p8est_replace_t replace_fn);
 
 /** Remove overlaps from a sorted list of quadrants.
  *

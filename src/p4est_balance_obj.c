@@ -43,6 +43,8 @@ struct p4est_balance_obj_s
   p4est_init_t        init_fn;
   p4est_replace_t     replace_fn;
   p4est_inspect_t    *inspect;
+  sc_notify_t        *notify;
+  const int8_t       *adapt_flags;
 };
 
 const char         *p4est_balance_method_strings[] = {
@@ -87,6 +89,30 @@ p4est_inspect_t *
 p4est_balance_obj_get_inspect (p4est_balance_obj_t * bobj)
 {
   return bobj->inspect;
+}
+
+void
+p4est_balance_obj_set_notify (p4est_balance_obj_t * bobj, sc_notify_t * notify)
+{
+  bobj->notify = notify;
+}
+
+sc_notify_t *
+p4est_balance_obj_get_notify (p4est_balance_obj_t * bobj)
+{
+  return bobj->notify;
+}
+
+void
+p4est_balance_obj_set_adapt_flags (p4est_balance_obj_t * bobj, const int8_t* adapt_flags)
+{
+  bobj->adapt_flags = adapt_flags;
+}
+
+const int8_t *
+p4est_balance_obj_get_adapt_flags (p4est_balance_obj_t * bobj)
+{
+  return bobj->adapt_flags;
 }
 
 void

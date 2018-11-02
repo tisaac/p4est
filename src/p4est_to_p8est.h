@@ -312,7 +312,7 @@
 #define p4est_complete_region           p8est_complete_region
 #define p4est_complete_subtree          p8est_complete_subtree
 #define p4est_balance_subtree           p8est_balance_subtree
-#define p4est_balance_border            p8est_balance_border
+#define p4est_replace_recursive         p8est_replace_recursive
 #define p4est_linearize_tree            p8est_linearize_tree
 #define p4est_next_nonempty_process     p8est_next_nonempty_process
 #define p4est_partition_correction      p8est_partition_correction
@@ -457,6 +457,10 @@
 #define p4est_balance_obj_get_replace   p8est_balance_obj_get_replace
 #define p4est_balance_obj_set_inspect   p8est_balance_obj_set_inspect
 #define p4est_balance_obj_get_inspect   p8est_balance_obj_get_inspect
+#define p4est_balance_obj_set_notify    p8est_balance_obj_set_notify
+#define p4est_balance_obj_get_notify    p8est_balance_obj_get_notify
+#define p4est_balance_obj_set_adapt_flags p8est_balance_obj_set_adapt_flags
+#define p4est_balance_obj_get_adapt_flags p8est_balance_obj_get_adapt_flags
 #define p4est_balance_obj               p8est_balance_obj
 #define P4EST_BALANCE_DEFAULT           P8EST_BALANCE_DEFAULT
 #define P4EST_BALANCE_SORT              P8EST_BALANCE_SORT

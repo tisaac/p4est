@@ -214,12 +214,12 @@ void                p4est_balance_subtree (p4est_t * p4est,
                                            p4est_topidx_t which_tree,
                                            p4est_init_t init_fn);
 
-void                p4est_balance_border (p4est_t * p4est,
-                                          p4est_connect_type_t btype,
-                                          p4est_topidx_t which_tree,
-                                          p4est_init_t init_fn,
-                                          p4est_replace_t replace_fn,
-                                          sc_array_t * borders);
+void                p4est_replace_recursive (p4est_t * p4est,
+                                             p4est_topidx_t nt, sc_array_t * array,
+                                             size_t start, size_t end,
+                                             p4est_quadrant_t * parent,
+                                             p4est_init_t init_fn,
+                                             p4est_replace_t replace_fn);
 
 /** Remove overlaps from a sorted list of quadrants.
  *
