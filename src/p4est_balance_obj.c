@@ -203,10 +203,6 @@ p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t * p4est)
   /* remember input quadrant count; it will not decrease */
   old_gnq = p4est->global_num_quadrants;
 
-  if (p4est->inspect){
-  	
-  }
-
   switch (method) {
   case P4EST_BALANCE_SORT:
     p4est_balance_sort (bobj, p4est);

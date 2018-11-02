@@ -662,6 +662,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   balance_A_time = -sc_MPI_Wtime ();
   balance_A_count_in = 0;
   balance_A_count_out = 0;
+  /* TODO: get accumulation from algorithms.h files */
   if (p4est->inspect != NULL) {
     p4est->inspect->use_B = 0;
   }
