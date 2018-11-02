@@ -795,7 +795,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   qarray = &peer->recv_first;
   sc_array_resize (qarray, qcount);
   memcpy (qarray->array, peer->send_first.array, qbytes);
-  p4est_balance_response (p4est, peer, btype, borders);
+  p4est_balance_response (p4est, peer, btype, borders, bobj);
   qcount = peer->send_second.elem_count;
   peer->recv_second_count = peer->send_second_count = (int) qcount;
   qbytes = qcount * sizeof (p4est_quadrant_t);
