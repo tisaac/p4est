@@ -36,6 +36,8 @@
 #include <p4est_bits.h>
 #endif
 
+#include "p4est_balance_obj_impl.h"
+
 static const int8_t fully_owned_flag = 0x01;
 static const int8_t any_face_flag = 0x02;
 

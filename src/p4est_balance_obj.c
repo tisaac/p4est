@@ -34,18 +34,8 @@
 #include <p8est.h>
 #endif
 
-struct p4est_balance_obj_s
-{
-  sc_MPI_Comm         comm;
-  p4est_balance_method_t method;
-  sc_statistics_t    *stats;
-  p4est_connect_type_t connect;
-  p4est_init_t        init_fn;
-  p4est_replace_t     replace_fn;
-  p4est_inspect_t    *inspect;
-  sc_notify_t        *notify;
-  const int8_t       *adapt_flags;
-};
+/* Pull in the implementation details */
+#include "p4est_balance_obj_impl.h"
 
 const char         *p4est_balance_method_strings[] = {
   P4EST_BALANCE_STR_SORT,

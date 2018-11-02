@@ -25,7 +25,12 @@
 #ifndef P4EST_BALANCE_OBJ_IMPL_H
 #define P4EST_BALANCE_OBJ_IMPL_H
 
+#ifndef P4_TO_P8
 #include <p4est.h>
+#else
+#include <p8est.h>
+#endif
+
 #include <sc_notify.h>
 
 struct p4est_balance_obj_s
