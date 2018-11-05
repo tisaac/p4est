@@ -39,6 +39,7 @@
 #include <p4est_algorithms.h>
 #include <p4est_balance_seeds.h>
 #endif
+#include "p4est_balance_obj_impl.h"
 
 typedef struct
 {
@@ -83,8 +84,9 @@ const static int p4est_corner_to_insul[P4EST_CHILDREN] = {
 };
 
 static int
-p4est_tree_get_conn_info (p4est_t *p4est, p4est_topidx_t t,
-                                  p4est_tree_neigh_info_t *info)
+p4est_tree_get_conn_info (p4est_balance_obj_t *bobj,
+                          p4est_t *p4est, p4est_topidx_t t,
+                          p4est_tree_neigh_info_t *info)
 {
   p4est_connectivity_t *conn = p4est->connectivity;
   p4est_topidx_t nt;
@@ -100,7 +102,7 @@ p4est_tree_get_conn_info (p4est_t *p4est, p4est_topidx_t t,
 #endif
   sc_flopinfo_t snap;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
 
 #ifdef P4_TO_P8
   kstart = 0;
@@ -194,7 +196,7 @@ p4est_tree_get_conn_info (p4est_t *p4est, p4est_topidx_t t,
 #ifdef P4_TO_P8
   sc_array_reset (eta);
 #endif
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
   return 0;
 }
 
@@ -437,7 +439,11 @@ p4est_tree_ghost_neighborhood_insert (p4est_t *p4est, p4est_topidx_t t, p4est_to
 }
 
 static void
-p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, p4est_topidx_t flt, p4est_topidx_t llt, int *proc_hash, sc_array_t *procs, int *minlevel, p4est_tree_neigh_info_t *info)
+p4est_tree_ghost_neighborhood (p4est_balance_obj_t *bobj, p4est_t *p4est,
+                               p4est_topidx_t t, p4est_topidx_t flt,
+                               p4est_topidx_t llt, int *proc_hash,
+                               sc_array_t *procs, int *minlevel,
+                               p4est_tree_neigh_info_t *info)
 {
   p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, t);
   p4est_quadrant_t f = tree->first_desc;
@@ -447,7 +453,7 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, p4est_topidx_t 
   int           alevel, fid, lid, idxor, dir, fstopid;
   sc_flopinfo_t snap;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_FUNC_SNAP (bobj, &snap);
 
   p4est_nearest_common_ancestor (&f, &l, &a);
 
@@ -512,12 +518,14 @@ p4est_tree_ghost_neighborhood (p4est_t *p4est, p4est_topidx_t t, p4est_topidx_t 
     p4est_quadrant_sibling (&fstop, &temp, fstopid + 1);
     fstop = temp;
   }
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_FUNC_SHOT (bobj, &snap);
 }
 
 static int
-p4est_balance_sort_min_insulation_level (p4est_t *p4est, p4est_tree_neigh_info_t *info, p4est_quadrant_t *q,
-                                         p4est_balance_obj_t * bobj)
+p4est_balance_sort_min_insulation_level (p4est_balance_obj_t * bobj,
+                                         p4est_t *p4est,
+                                         p4est_tree_neigh_info_t *info,
+                                         p4est_quadrant_t *q)
 {
   int i, j, k, l, m, p;
 #ifdef P4_TO_P8
@@ -809,7 +817,7 @@ p4est_balance_sort_compute_pattern_sort (p4est_balance_obj_t *bobj, p4est_t *p4e
   sc_flopinfo_t snap;
   int rank = p4est->mpirank;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_FUNC_SNAP (bobj, &snap);
 
   /* block balance local */
   for (t = flt; t <= llt; t++) {
@@ -817,7 +825,7 @@ p4est_balance_sort_compute_pattern_sort (p4est_balance_obj_t *bobj, p4est_t *p4e
 
     /* Get the connectivity information for this tree */
     info = &tinfo[t - flt];
-    p4est_tree_get_conn_info (p4est, t, info);
+    p4est_tree_get_conn_info (bobj, p4est, t, info);
   }
 
   /* compute the processes I communicate with in the sort phase */
@@ -848,7 +856,7 @@ p4est_balance_sort_compute_pattern_sort (p4est_balance_obj_t *bobj, p4est_t *p4e
       p4est_quadrant_t a, fd, ld;
       int t = i ? llt : flt;
 
-      minlevel[i] = p4est_balance_sort_min_insulation_level (p4est, &tinfo[t - flt], &desc[i], bobj);
+      minlevel[i] = p4est_balance_sort_min_insulation_level (bobj, p4est, &tinfo[t - flt], &desc[i]);
       p4est_quadrant_ancestor (&desc[i], minlevel[i], &a);
       p4est_quadrant_first_descendant(&a, &fd, P4EST_QMAXLEVEL);
       p4est_quadrant_last_descendant(&a, &ld, P4EST_QMAXLEVEL);
@@ -912,11 +920,12 @@ p4est_balance_sort_compute_pattern_sort (p4est_balance_obj_t *bobj, p4est_t *p4e
     P4EST_FREE (comm_in);
   }
 #endif
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_FUNC_SHOT (bobj, &snap);
 }
 
 static void
-p4est_balance_sort_compute_pattern_neigh (p4est_t *p4est,
+p4est_balance_sort_compute_pattern_neigh (p4est_balance_obj_t *bobj,
+                                          p4est_t *p4est,
                                           int flt, int llt, int num_trees,
                                           p4est_tree_neigh_info_t *tinfo,
                                           int *proc_hash, sc_array_t *procs,
@@ -928,7 +937,7 @@ p4est_balance_sort_compute_pattern_neigh (p4est_t *p4est,
   size_t s;
   int rank = p4est->mpirank;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
 
   /* first figure out the parallel neighborhood */
   sc_array_truncate (procs);
@@ -943,7 +952,7 @@ p4est_balance_sort_compute_pattern_neigh (p4est_t *p4est,
 
     /* find ghost neighbors of this tree */
     if (num_trees) {
-      p4est_tree_ghost_neighborhood (p4est, t, flt, llt, proc_hash, procs, minlevel, info);
+      p4est_tree_ghost_neighborhood (bobj, p4est, t, flt, llt, proc_hash, procs, minlevel, info);
     }
   }
   sc_array_sort (procs, sc_int_compare);
@@ -968,17 +977,17 @@ p4est_balance_sort_compute_pattern_neigh (p4est_t *p4est,
     P4EST_FREE (proc_hash_T);
   }
 #endif
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
 static void
-p4est_balance_sort_local (p4est_t *p4est,
+p4est_balance_sort_local (p4est_balance_obj_t * bobj,
+                          p4est_t *p4est,
                           p4est_connect_type_t btype,
                           int flt, int llt, int num_trees,
                           int num_sort, int *minlevel,
                           p4est_quadrant_t *desc,
-                          sc_array_t *tree_bufs, sc_array_t *sort_bufs,
-                          p4est_balance_obj_t * bobj)
+                          sc_array_t *tree_bufs, sc_array_t *sort_bufs)
 {
   p4est_topidx_t t;
   const int8_t       *pre_adapt_flags = NULL;
@@ -988,7 +997,7 @@ p4est_balance_sort_local (p4est_t *p4est,
   sc_mempool_t       *qpool;
   sc_mempool_t       *list_alloc;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
   pre_adapt_flags = p4est_balance_obj_get_adapt_flags (bobj);
 
   switch (p4est_connect_type_int (btype)) {
@@ -1178,20 +1187,20 @@ p4est_balance_sort_local (p4est_t *p4est,
   }
   sc_mempool_destroy (list_alloc);
 
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
 static void
-p4est_balance_sort_sort (p4est_t *p4est, int flt, int llt,
+p4est_balance_sort_sort (p4est_balance_obj_t * bobj,
+                         p4est_t *p4est, int flt, int llt,
                          int num_trees, int num_sort,
                          int (*procrange)[2], sc_array_t *sort_bufs,
-                         p4est_balance_obj_t * bobj,
-						 sc_statistics_t * stats)
+                         sc_statistics_t * stats)
 {
   sc_flopinfo_t snap;
   int rank = p4est->mpirank;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
 #ifdef P4EST_ENABLE_MPI
   if (stats) {
     if (!sc_statistics_has (stats, "balance sort send")) {
@@ -1376,11 +1385,12 @@ p4est_balance_sort_sort (p4est_t *p4est, int flt, int llt,
     sc_array_reset (&send_bufs[0]);
   }
 #endif
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
 static void
-p4est_balance_sort_merge_seeds (p4est_t *p4est, p4est_connect_type_t btype,
+p4est_balance_sort_merge_seeds (p4est_balance_obj_t *bobj,
+                                p4est_t *p4est, p4est_connect_type_t btype,
                                 int flt, int llt, int num_trees,
                                 int num_sort, int *minlevel,
                                 p4est_quadrant_t *desc,
@@ -1388,7 +1398,7 @@ p4est_balance_sort_merge_seeds (p4est_t *p4est, p4est_connect_type_t btype,
 {
   sc_flopinfo_t snap;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_FUNC_SNAP (bobj, &snap);
 #ifdef P4EST_ENABLE_MPI
   if (num_sort > 0) {
     int i;
@@ -1516,24 +1526,24 @@ p4est_balance_sort_merge_seeds (p4est_t *p4est, p4est_connect_type_t btype,
 
   }
 #endif
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
 static void
-p4est_balance_sort_neigh (p4est_t *p4est, int flt, int llt, int num_trees,
+p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
+                          p4est_t *p4est, int flt, int llt, int num_trees,
                           int *proc_hash, sc_array_t *procs,
                           p4est_tree_neigh_info_t *tinfo,
                           sc_array_t *tree_bufs,
                           sc_array_t *neigh_bufs,
-						  p4est_balance_obj_t * bobj,
-						  sc_statistics_t * stats)
+                          sc_statistics_t * stats)
 {
   p4est_topidx_t t;
   sc_flopinfo_t snap;
   size_t nneigh = procs->elem_count;
   int rank = p4est->mpirank;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
   /* ghost neighbor balance */
   for (t = 0; t < num_trees; t++) {
     int i, j, k, l;
@@ -1761,11 +1771,12 @@ p4est_balance_sort_neigh (p4est_t *p4est, int flt, int llt, int num_trees,
       }
     }
   }
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
 static void
-p4est_balance_sort_complete (p4est_t *p4est, int flt, int llt, int num_trees,
+p4est_balance_sort_complete (p4est_balance_obj_t *bobj,
+                             p4est_t *p4est, int flt, int llt, int num_trees,
                              sc_array_t *tree_bufs,
                              p4est_init_t init_fn,
                              p4est_replace_t replace_fn)
@@ -1773,7 +1784,7 @@ p4est_balance_sort_complete (p4est_t *p4est, int flt, int llt, int num_trees,
   p4est_topidx_t t;
   sc_flopinfo_t snap;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
 
   if (num_trees) {
     sc_array_t newcomplete;
@@ -1795,7 +1806,7 @@ p4est_balance_sort_complete (p4est_t *p4est, int flt, int llt, int num_trees,
     sc_array_reset (&newcomplete);
   }
 
-  P4EST_FUNC_SHOT (p4est, &snap);
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
 void
@@ -1820,11 +1831,9 @@ p4est_balance_sort (p4est_balance_obj_t *bobj, p4est_t *p4est)
   p4est_connect_type_t btype;
   p4est_init_t init_fn;
   p4est_replace_t replace_fn;
-  double              balance_sort_time;
-  double              balance_neigh_time;
   sc_statistics_t    *stats = NULL;
 
-  P4EST_FUNC_SNAP (p4est, &snap);
+  P4EST_BAL_FUNC_SNAP (bobj, &snap);
 
   btype = p4est_balance_obj_get_connect (bobj);
   init_fn = p4est_balance_obj_get_init (bobj);
@@ -1879,19 +1888,14 @@ p4est_balance_sort (p4est_balance_obj_t *bobj, p4est_t *p4est)
   sc_array_init (&sort_bufs[0], sizeof (p4est_quadrant_t));
   sc_array_init (&sort_bufs[1], sizeof (p4est_quadrant_t));
 
-  p4est_balance_sort_local (p4est, btype, flt, llt, num_trees,
+  p4est_balance_sort_local (bobj, p4est, btype, flt, llt, num_trees,
                             num_sort, minlevel, desc, tree_bufs,
-                            sort_bufs, bobj);
+                            sort_bufs);
 
-  /* start balance sort timing */
-  balance_sort_time = -sc_MPI_Wtime ();
-  p4est_balance_sort_sort (p4est, flt, llt, num_trees, num_sort,
-                           procrange, sort_bufs, bobj, stats);
+  p4est_balance_sort_sort (bobj, p4est, flt, llt, num_trees, num_sort,
+                           procrange, sort_bufs, stats);
 
-  /* end balance sort timing */
-  balance_sort_time += sc_MPI_Wtime ();
-
-  p4est_balance_sort_merge_seeds (p4est, btype, flt, llt, num_trees,
+  p4est_balance_sort_merge_seeds (bobj, p4est, btype, flt, llt, num_trees,
                                   num_sort, minlevel, desc,
                                   tree_bufs, sort_bufs);
 
@@ -1900,7 +1904,7 @@ p4est_balance_sort (p4est_balance_obj_t *bobj, p4est_t *p4est)
 
   proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
   procs = sc_array_new_size (sizeof (int), P4EST_INSUL);
-  p4est_balance_sort_compute_pattern_neigh (p4est, flt, llt, num_trees,
+  p4est_balance_sort_compute_pattern_neigh (bobj, p4est, flt, llt, num_trees,
                                             tinfo, proc_hash, procs,
                                             minlevel, desc);
   nneigh = procs->elem_count;
@@ -1909,15 +1913,10 @@ p4est_balance_sort (p4est_balance_obj_t *bobj, p4est_t *p4est)
     sc_array_init (&neigh_bufs[s], sizeof (p4est_quadrant_t));
   }
 
-  /* start balance_neigh timing */
-  balance_neigh_time = -sc_MPI_Wtime ();
-  p4est_balance_sort_neigh (p4est, flt, llt, num_trees, proc_hash, procs, tinfo,
-                            tree_bufs, neigh_bufs, bobj, stats);
-  
-  /* end balance_neigh timing */
-  balance_neigh_time += sc_MPI_Wtime ();
+  p4est_balance_sort_neigh (bobj, p4est, flt, llt, num_trees, proc_hash, procs, tinfo,
+                            tree_bufs, neigh_bufs, stats);
 
-  p4est_balance_sort_complete (p4est, flt, llt, num_trees, tree_bufs,
+  p4est_balance_sort_complete (bobj, p4est, flt, llt, num_trees, tree_bufs,
                                init_fn, replace_fn);
 
   for (t = 0; t < num_trees; t++) {
@@ -1934,11 +1933,6 @@ p4est_balance_sort (p4est_balance_obj_t *bobj, p4est_t *p4est)
   }
   P4EST_FREE (tinfo);
   P4EST_FREE (proc_hash);
-  P4EST_FUNC_SHOT (p4est, &snap);
-  
-  if (stats){
-    sc_statistics_accumulate (stats, "balance sort time", balance_sort_time);
-    sc_statistics_accumulate (stats, "balance neigh time", balance_neigh_time);
-  }
+  P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 

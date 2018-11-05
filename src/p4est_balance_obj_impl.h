@@ -32,6 +32,7 @@
 #endif
 
 #include <sc_notify.h>
+#include <sc_flops.h>
 
 struct p4est_balance_obj_s
 {
@@ -43,7 +44,27 @@ struct p4est_balance_obj_s
   p4est_replace_t     replace_fn;
   p4est_inspect_t    *inspect;
   sc_notify_t        *notify;
+  int                 flop_started;
+  sc_flopinfo_t       flop;
   const int8_t       *adapt_flags;
 };
+
+#define P4EST_BAL_FUNC_SNAP(bobj,snap)                       \
+  do {                                                       \
+    if ((bobj)->stats) {                                     \
+      if (!(bobj)->inspect->flop_started) {                   \
+        (bobj)->flop_started = 1;                            \
+        sc_flops_start (&((bobj)->flop));                    \
+      }                                                      \
+      SC_FUNC_SNAP ((bobj)->stats, &((bobj)->flop), (snap)); \
+    }                                                        \
+  } while (0)
+
+#define P4EST_BAL_FUNC_SHOT(bobj,snap)                       \
+  do {                                                       \
+    if ((bobj)->stats) {                                     \
+      SC_FUNC_SHOT ((bobj)->stats, &((bobj)->flop), (snap)); \
+    }                                                        \
+  } while (0)
 
 #endif
