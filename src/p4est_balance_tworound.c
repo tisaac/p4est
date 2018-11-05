@@ -437,7 +437,7 @@ enum {
   BALANCE_NUM_STATS
 };
 
-const char *balance_stat_names[BALANCE_NUM_STATS] = {
+static const char *balance_stat_names[BALANCE_NUM_STATS] = {
                                                     "balance_A time",
                                                     "balance_A count in",
                                                     "balance_A count out",
@@ -905,6 +905,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
     balance_stats[BALANCE_ZERO_SENDS_0 + k] = 0;
     balance_stats[BALANCE_ZERO_RECVS_0 + k] = 0;
   }
+  balance_stats[BALANCE_COMM_TIME] = -sc_MPI_Wtime ();
   if (!notify) {
     notify = sc_notify_new (p4est->mpicomm);
     own_notify = 1;
@@ -1202,6 +1203,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
     balance_stats[BALANCE_ZERO_RECVS_0 + k] = recv_zero[k];
   }
 #endif
+  balance_stats[BALANCE_B_TIME] = -sc_MPI_Wtime ();
   if (p4est->inspect != NULL) {
     p4est->inspect->use_B = 1;
   }
@@ -1369,6 +1371,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
     int i;
 
     for (i = 0; i < BALANCE_NUM_STATS; i++) {
+      printf ("Stat %s\n", balance_stat_names[i]);
+      P4EST_ASSERT(balance_stats[i] == balance_stats[i]);
       sc_statistics_accumulate (stats, balance_stat_names[i], balance_stats[i]);
     }
   }

@@ -52,7 +52,7 @@ struct p4est_balance_obj_s
 #define P4EST_BAL_FUNC_SNAP(bobj,snap)                       \
   do {                                                       \
     if ((bobj)->stats) {                                     \
-      if (!(bobj)->inspect->flop_started) {                   \
+      if (!(bobj)->flop_started) {                           \
         (bobj)->flop_started = 1;                            \
         sc_flops_start (&((bobj)->flop));                    \
       }                                                      \

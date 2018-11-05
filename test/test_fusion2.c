@@ -344,10 +344,6 @@ enum
   FUSION_TIME_PARTITION,
   FUSION_TIME_GHOST,
   FUSION_TIME_OPTIMIZED,
-  FUSION_BAL_LOAD_OUT,
-  FUSION_BAL_ZERO_OUT,
-  FUSION_BAL_LOAD_IN,
-  FUSION_BAL_ZERO_IN,
   FUSION_NUM_STATS
 };
 
@@ -623,14 +619,6 @@ main (int argc, char **argv)
   sc_stats_init (&stats[FUSION_TIME_PARTITION], "Partition");
   sc_stats_init (&stats[FUSION_TIME_GHOST], "Ghost");
   sc_stats_init (&stats[FUSION_TIME_OPTIMIZED], "Optimized");
-  sc_stats_init (&stats[FUSION_BAL_LOAD_OUT],
-                 "Balance communication non-zero edges out");
-  sc_stats_init (&stats[FUSION_BAL_ZERO_OUT],
-                 "Balance communication zero edges out");
-  sc_stats_init (&stats[FUSION_BAL_LOAD_IN],
-                 "Balance communication non-zero edges in");
-  sc_stats_init (&stats[FUSION_BAL_ZERO_IN],
-                 "Balance communication zero edges in");
 
   istats = sc_statistics_new (mpicomm);
 
@@ -892,14 +880,6 @@ main (int argc, char **argv)
       if (i) {
         sc_stats_accumulate (&stats[FUSION_TIME_OPTIMIZED],
                              snapshot_opt.iwtime);
-        sc_stats_accumulate (&stats[FUSION_BAL_LOAD_OUT],
-                             (double) inspect.balance_load_sends[0]);
-        sc_stats_accumulate (&stats[FUSION_BAL_ZERO_OUT],
-                             (double) inspect.balance_zero_sends[0]);
-        sc_stats_accumulate (&stats[FUSION_BAL_LOAD_IN],
-                             (double) inspect.balance_load_receives[0]);
-        sc_stats_accumulate (&stats[FUSION_BAL_ZERO_IN],
-                             (double) inspect.balance_zero_receives[0]);
       }
 
       p4est->inspect = NULL;

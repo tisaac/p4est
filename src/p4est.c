@@ -1177,6 +1177,7 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   if (p4est->inspect) {
     p4est_balance_obj_set_stats (bobj, p4est->inspect->stats);
     p4est_balance_obj_set_notify (bobj, p4est->inspect->notify);
+    p4est_balance_obj_set_adapt_flags (bobj, p4est->inspect->pre_adapt_flags);
   }
   p4est_balance_obj (bobj, p4est);
   p4est_balance_obj_destroy (bobj);
