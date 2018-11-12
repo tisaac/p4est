@@ -1158,11 +1158,6 @@ p4est_balance (p4est_t * p4est, p4est_connect_type_t btype,
   p4est_balance_ext (p4est, btype, init_fn, NULL);
 }
 
-extern void p4est_balance_tworound (p4est_t *p4est, p4est_connect_type_t btype,
-                                    p4est_init_t init_fn, p4est_replace_t replace_fn);
-extern void p4est_balance_sort (p4est_t *p4est, p4est_connect_type_t btype,
-                                p4est_init_t init_fn, p4est_replace_t replace_fn);
-
 void
 p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
                    p4est_init_t init_fn, p4est_replace_t replace_fn)
@@ -1176,8 +1171,6 @@ p4est_balance_ext (p4est_t * p4est, p4est_connect_type_t btype,
   p4est_balance_obj_set_replace (bobj, replace_fn);
   if (p4est->inspect) {
     p4est_balance_obj_set_stats (bobj, p4est->inspect->stats);
-    p4est_balance_obj_set_notify (bobj, p4est->inspect->notify);
-    p4est_balance_obj_set_adapt_flags (bobj, p4est->inspect->pre_adapt_flags);
   }
   p4est_balance_obj (bobj, p4est);
   p4est_balance_obj_destroy (bobj);

@@ -27,6 +27,7 @@
 #include <p4est_ghost.h>
 #include <p4est_lnodes.h>
 #include <p4est_extended.h>
+#include <p4est_balance_obj.h>
 #include <p4est_vtk.h>
 #include <p4est_fused.h>
 #include <p4est_algorithms.h>
@@ -36,6 +37,7 @@
 #include <p8est_ghost.h>
 #include <p8est_lnodes.h>
 #include <p8est_extended.h>
+#include <p8est_balance_obj.h>
 #include <p8est_vtk.h>
 #include <p8est_fused.h>
 #include <p8est_algorithms.h>
@@ -477,11 +479,14 @@ main (int argc, char **argv)
   const char         *out_base_name = NULL;
   const char         *conn_string = NULL;
   const char         *notify_name;
+  const char         *balance_name;
   int                 ntop, nint, nbot;
-  int                 balance_sort = 0;
   int                 balance_sort_root = 0;
   p4est_inspect_t     inspect;
+  p4est_balance_obj_t *bobj;
+  sc_notify_t         *notify;
   sc_notify_type_t    notify_type;
+  p4est_balance_method_t balance_method;
   sc_statistics_t    *istats;
   p4est_vtk_context_t *vtk;
 
@@ -511,7 +516,7 @@ main (int argc, char **argv)
   SC_CHECK_MPI (mpiret);
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
 
-  /* grap parameters for notify_nary from command line */
+  /* grab parameters for notify_nary from command line */
   ntop = sc_notify_nary_ntop_default;
   nint = sc_notify_nary_nint_default;
   nbot = sc_notify_nary_nbot_default;
@@ -542,9 +547,9 @@ main (int argc, char **argv)
                       "wayness of int of sc_notify nary tree");
   sc_options_add_string (opt, 'n', "notify-type", &notify_name, NULL,
                          "Notify algorithm (see sc_notify.h) for type strings");
-  sc_options_add_int (opt, '\0', "balance-sort", &balance_sort,
-                      balance_sort,
-                      "2:1 balance using sorting-based parallel algorithm");
+  sc_options_add_string (opt, '\0', "balance-method", &balance_name,
+                         balance_name,
+                         "2:1 balance algorithm (see p4est_balance_obj.h for type string)");
   sc_options_add_int (opt, '\0', "balance-sort-root", &balance_sort_root,
                       balance_sort_root,
                       "use fully synchronous sorting in 2:1 balance");
@@ -562,7 +567,10 @@ main (int argc, char **argv)
   sc_notify_nary_nint_default = nint;
   sc_notify_nary_nbot_default = nbot;
 
+  bobj = p4est_balance_obj_new (mpicomm);
+
   memset (&inspect, 0, sizeof (p4est_inspect_t));
+  notify = NULL;
   if (notify_name) {
     for (i = 0; i < SC_NOTIFY_NUM_TYPES; i++) {
       if (!strcmp (notify_name, sc_notify_type_strings[i])) {
@@ -570,11 +578,22 @@ main (int argc, char **argv)
         break;
       }
     }
-    inspect.notify = sc_notify_new (mpicomm);
-    sc_notify_set_type (inspect.notify, notify_type);
+    notify = sc_notify_new (mpicomm);
+    sc_notify_set_type (notify, notify_type);
+    p4est_balance_obj_set_notify (bobj, notify);
   }
-  inspect.balance_sort = balance_sort;
-  inspect.balance_sort_root = balance_sort_root;
+  if (balance_name) {
+    for (i = 0; i < P4EST_BALANCE_NUM_METHODS; i++) {
+      if (!strcmp (balance_name, p4est_balance_method_strings[i])) {
+        balance_method = i;
+        break;
+      }
+    }
+    p4est_balance_obj_set_method (bobj, balance_method);
+  }
+  if (balance_sort_root) {
+    p4est_balance_obj_sort_set_use_root (bobj, 1);
+  }
 
   sc_set_log_defaults (NULL, NULL, log_priority);
   p4est_init (NULL, log_priority);
@@ -642,6 +661,7 @@ main (int argc, char **argv)
     else {
       P4EST_GLOBAL_PRODUCTIONF ("Timing loop %d\n", i);
       inspect.stats = istats;
+      p4est_balance_obj_set_stats (bobj, istats);
     }
     sc_log_indent_push_count (p4est_package_id, 2);
 
@@ -851,7 +871,7 @@ main (int argc, char **argv)
 
       if (!skip_reference) {
         p4est_adapt_fused_reference (p4est, flags8, 0 /* no data */ ,
-                                     P4EST_CONNECT_FULL,
+                                     bobj,
                                      1 /* yes repartition */ ,
                                      0 /* no repartition for coarsening */ ,
                                      1 /* ghost layer width */ ,
@@ -871,7 +891,7 @@ main (int argc, char **argv)
       SC_CHECK_MPI (mpiret);
       sc_flops_snap (&fi_opt, &snapshot_opt);
       p4est_adapt_fused (p4est, flags8, 0 /* no data */ ,
-                         P4EST_CONNECT_FULL, 1 /* yes repartition */ ,
+                         bobj, 1 /* yes repartition */ ,
                          0 /* no repartition for coarsening */ ,
                          1 /* ghost layer width */ ,
                          P4EST_CONNECT_FULL,
@@ -917,14 +937,16 @@ main (int argc, char **argv)
   sc_statistics_print (istats, p4est_package_id, SC_LP_ESSENTIAL, 1, 1);
   sc_statistics_destroy (istats);
 
-  if (inspect.notify) {
-    sc_notify_destroy (inspect.notify);
+  if (notify) {
+    sc_notify_destroy (notify);
   }
 
   /* clean up */
   p4est_ghost_destroy (ghost);
   p4est_destroy (p4est);
   p4est_connectivity_destroy (conn);
+
+  p4est_balance_obj_destroy (bobj);
 
   sc_options_destroy (opt);
 

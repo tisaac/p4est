@@ -61,23 +61,12 @@ struct p8est_inspect
 {
   size_t              balance_A_count_in;
   size_t              balance_A_count_out;
-  size_t              balance_comm_sent;
-  size_t              balance_comm_nzpeers;
   size_t              balance_B_count_in;
   size_t              balance_B_count_out;
-  size_t              balance_load_sends[2], balance_load_receives[2];
-  size_t              balance_zero_sends[2], balance_zero_receives[2];
-  double              balance_A;
-  double              balance_comm;
-  double              balance_B;
   int                 use_B;
   sc_statistics_t    *stats;
   sc_flopinfo_t       flop;
   int                 flop_started;
-  sc_notify_t        *notify;
-  const int8_t       *pre_adapt_flags;
-  int                 balance_sort;
-  int                 balance_sort_root;
 };
 
 #define P4EST_FUNC_SNAP(p4est,snap)                                              \

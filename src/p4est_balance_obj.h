@@ -97,17 +97,25 @@ void                p4est_balance_obj_set_replace (p4est_balance_obj_t * bobj,
 p4est_replace_t     p4est_balance_obj_get_replace (p4est_balance_obj_t *
                                                    bobj);
 
-void                p4est_balance_obj_set_adapt_flags (p4est_balance_obj_t *bobj,
-                                                       const int8_t *flags);
-const int8_t *      p4est_balance_obj_get_adapt_flags (p4est_balance_obj_t *bobj);
+void                p4est_balance_obj_set_adapt_flags (p4est_balance_obj_t *
+                                                       bobj,
+                                                       const int8_t * flags);
+const int8_t       *p4est_balance_obj_get_adapt_flags (p4est_balance_obj_t *
+                                                       bobj);
 
-void                p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj, p4est_inspect_t * inspect);
+void                p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj,
+                                                   p4est_inspect_t * inspect);
 
-p4est_inspect_t *   p4est_balance_obj_get_inspect (p4est_balance_obj_t * bobj);
+p4est_inspect_t    *p4est_balance_obj_get_inspect (p4est_balance_obj_t *
+                                                   bobj);
 
-void                p4est_balance_obj_set_notify (p4est_balance_obj_t * bobj, sc_notify_t * notify);
+void                p4est_balance_obj_set_notify (p4est_balance_obj_t * bobj,
+                                                  sc_notify_t * notify);
 
-sc_notify_t *       p4est_balance_obj_get_notify (p4est_balance_obj_t * bobj);
+sc_notify_t        *p4est_balance_obj_get_notify (p4est_balance_obj_t * bobj);
+
+void                p4est_balance_obj_sort_set_use_root (p4est_balance_obj_t *
+                                                         bobj, int use_root);
 
 void                p4est_balance_obj (p4est_balance_obj_t * bobj,
                                        p4est_t * p4est);

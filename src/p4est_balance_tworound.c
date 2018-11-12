@@ -52,12 +52,11 @@ typedef struct
 p4est_balance_peer_t;
 
 static void
-p4est_balance_border (p4est_balance_obj_t *bobj, p4est_t * p4est,
+p4est_balance_border (p4est_balance_obj_t * bobj, p4est_t * p4est,
                       p4est_connect_type_t btype, p4est_topidx_t which_tree,
                       p4est_init_t init_fn, p4est_replace_t replace_fn,
                       sc_array_t * borders,
-                      double *balance_B_count_in,
-                      double *balance_B_count_out)
+                      double *balance_B_count_in, double *balance_B_count_out)
 {
   size_t              iz, jz, kz;
   size_t              incount;
@@ -247,8 +246,7 @@ p4est_balance_border (p4est_balance_obj_t *bobj, p4est_t * p4est,
     p4est_balance_kernel (inlist, p, 0, bound, qpool, list_alloc,
                           NULL, NULL,
                           &count_already_inlist,
-                          &count_already_outlist,
-                          &count_ancestor_inlist);
+                          &count_already_outlist, &count_ancestor_inlist);
     p4est_complete_kernel (inlist, p, NULL, NULL, flist);
 
     /* count the amount we've added (-1 because we subtract p) */
@@ -416,7 +414,8 @@ p4est_balance_schedule (p4est_t * p4est, p4est_balance_peer_t * peers,
   }
 }
 
-enum {
+enum
+{
   BALANCE_A_TIME = 0,
   BALANCE_A_COUNT_IN,
   BALANCE_A_COUNT_OUT,
@@ -439,35 +438,35 @@ enum {
   BALANCE_NUM_STATS
 };
 
-static const char *balance_stat_names[BALANCE_NUM_STATS] = {
-                                                    "Balance A time",
-                                                    "Balance A count inlist",
-                                                    "Balance A count outlist",
-                                                    "Balance comm time",
-                                                    "Balance sent second round",
-                                                    "Balance nonzero peers second round",
-                                                    "Balance nonzero sends 0",
-                                                    "Balance nonzero sends 1",
-                                                    "Balance nonzero recvs 0",
-                                                    "Balance nonzero recvs 1",
-                                                    "Balance A zero sends",
-                                                    "Balance B zero sends",
-                                                    "Balance A zero receives",
-                                                    "Balance B zero receives",
-                                                    "Balance B time",
-                                                    "Balance B count inlist",
-                                                    "Balance B count outlist",
+static const char  *balance_stat_names[BALANCE_NUM_STATS] = {
+  "Balance A time",
+  "Balance A count inlist",
+  "Balance A count outlist",
+  "Balance comm time",
+  "Balance sent second round",
+  "Balance nonzero peers second round",
+  "Balance nonzero sends 0",
+  "Balance nonzero sends 1",
+  "Balance nonzero recvs 0",
+  "Balance nonzero recvs 1",
+  "Balance A zero sends",
+  "Balance B zero sends",
+  "Balance A zero receives",
+  "Balance B zero receives",
+  "Balance B time",
+  "Balance B count inlist",
+  "Balance B count outlist",
 #ifndef P4_TO_P8
-                                                    "p4est_complete_or_balance", /* pre-register so always present */
-                                                    "p4est_subtree_replace", /* pre-register so always present */
+  "p4est_complete_or_balance",  /* pre-register so always present */
+  "p4est_subtree_replace",      /* pre-register so always present */
 #else
-                                                    "p8est_complete_or_balance",
-                                                    "p8est_subtree_replace", /* pre-register so always present */
+  "p8est_complete_or_balance",
+  "p8est_subtree_replace",      /* pre-register so always present */
 #endif
 };
 
 void
-p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
+p4est_balance_tworound (p4est_balance_obj_t * bobj, p4est_t * p4est)
 {
   const int           rank = p4est->mpirank;
   const int           num_procs = p4est->mpisize;
@@ -544,8 +543,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   sc_notify_t        *notify = NULL;
   int                 own_notify = 0;
   p4est_connect_type_t btype;
-  p4est_init_t init_fn;
-  p4est_replace_t replace_fn;
+  p4est_init_t        init_fn;
+  p4est_replace_t     replace_fn;
   double              balance_stats[BALANCE_NUM_STATS];
   sc_statistics_t    *stats = NULL;
 
@@ -566,11 +565,11 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 #endif
 
   {
-    sc_statistics_t *stats = NULL;
+    sc_statistics_t    *stats = NULL;
 
     stats = p4est_balance_obj_get_stats (bobj);
     if (stats) {
-      int i;
+      int                 i;
 
       for (i = 0; i < BALANCE_NUM_STATS; i++) {
         if (!sc_statistics_has (stats, balance_stat_names[i])) {
@@ -662,7 +661,7 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   nextlow.level = P4EST_QMAXLEVEL;
 
   /* start balance_A timing */
-  balance_stats[BALANCE_A_TIME] = -sc_MPI_Wtime();
+  balance_stats[BALANCE_A_TIME] = -sc_MPI_Wtime ();
   balance_stats[BALANCE_A_COUNT_IN] = 0;
   balance_stats[BALANCE_A_COUNT_OUT] = 0;
   /* TODO: get accumulation from algorithms.h files */
@@ -703,10 +702,10 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 
     /* local balance first pass */
     {
-      p4est_inspect_t *inspect_in = p4est->inspect;
-      p4est_inspect_t this_inspect;
+      p4est_inspect_t    *inspect_in = p4est->inspect;
+      p4est_inspect_t     this_inspect;
 
-      memset(&this_inspect,0,sizeof(p4est_inspect_t));
+      memset (&this_inspect, 0, sizeof (p4est_inspect_t));
       this_inspect.stats = stats;
       p4est->inspect = &this_inspect;
 
@@ -1098,7 +1097,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 #endif /* P4EST_ENABLE_DEBUG */
 
       /* process incoming quadrants to interleave with communication */
-      p4est_balance_response (bobj, p4est, peer, btype, borders, &balance_stats[BALANCE_COMM_SENT],
+      p4est_balance_response (bobj, p4est, peer, btype, borders,
+                              &balance_stats[BALANCE_COMM_SENT],
                               &balance_stats[BALANCE_COMM_NZPEERS]);
       qcount = peer->send_second.elem_count;
       if (qcount > 0) {
@@ -1141,7 +1141,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   qarray = &peer->recv_first;
   sc_array_resize (qarray, qcount);
   memcpy (qarray->array, peer->send_first.array, qbytes);
-  p4est_balance_response (bobj, p4est, peer, btype, borders, &balance_stats[BALANCE_COMM_SENT],
+  p4est_balance_response (bobj, p4est, peer, btype, borders,
+                          &balance_stats[BALANCE_COMM_SENT],
                           &balance_stats[BALANCE_COMM_NZPEERS]);
   qcount = peer->send_second.elem_count;
   peer->recv_second_count = peer->send_second_count = (int) qcount;
@@ -1401,16 +1402,16 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   P4EST_VERBOSEF ("Balance skipped %lld\n", (long long) skipped);
 
   if (stats) {
-    int i;
+    int                 i;
 
     /* Do not need to accumulate the preregistered functions, hence -2 */
     for (i = 0; i < BALANCE_NUM_STATS - 2; i++) {
-      P4EST_LDEBUGF ("name %s, %f\n", balance_stat_names[i], balance_stats[i]);
-      sc_statistics_accumulate (stats, balance_stat_names[i], balance_stats[i]);
+      P4EST_LDEBUGF ("name %s, %f\n", balance_stat_names[i],
+                     balance_stats[i]);
+      sc_statistics_accumulate (stats, balance_stat_names[i],
+                                balance_stats[i]);
     }
   }
 
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
-
-

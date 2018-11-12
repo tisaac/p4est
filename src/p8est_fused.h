@@ -35,6 +35,7 @@
 #include <p8est.h>
 #include <p8est_ghost.h>
 #include <p8est_extended.h>
+#include <p8est_balance_obj.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -76,7 +77,7 @@ enum
 void                p8est_adapt_fused (p8est_t * p8est,
                                        const int8_t * adapt_flag,
                                        int copy_data,
-                                       p8est_connect_type_t balance_type,
+                                       p8est_balance_obj_t * bobj,
                                        int repartition,
                                        int partition_for_coarsening,
                                        int ghost_layer_width,
@@ -90,8 +91,7 @@ void                p8est_adapt_fused (p8est_t * p8est,
 void                p8est_adapt_fused_reference (p8est_t * p8est,
                                                  const int8_t * adapt_flag,
                                                  int copy_data,
-                                                 p8est_connect_type_t
-                                                 balance_type,
+                                                 p8est_balance_obj_t * bobj,
                                                  int repartition,
                                                  int partition_for_coarsening,
                                                  int ghost_layer_width,

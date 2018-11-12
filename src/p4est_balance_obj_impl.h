@@ -47,6 +47,7 @@ struct p4est_balance_obj_s
   int                 flop_started;
   sc_flopinfo_t       flop;
   const int8_t       *adapt_flags;
+  int                 use_root;
 };
 
 #define P4EST_BAL_FUNC_SNAP(bobj,snap)                       \

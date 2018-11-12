@@ -91,17 +91,27 @@ void                p8est_balance_obj_set_init (p8est_balance_obj_t * bobj,
                                                 p8est_init_t init_fn);
 p8est_init_t        p8est_balance_obj_get_init (p8est_balance_obj_t * bobj);
 
-void                p8est_balance_obj_set_inspect (p8est_balance_obj_t * bobj, p8est_inspect_t * inspect);
+void                p8est_balance_obj_set_inspect (p8est_balance_obj_t * bobj,
+                                                   p8est_inspect_t * inspect);
 
-p4est_inspect_t *   p8est_balance_obj_get_inspect (p8est_balance_obj_t * bobj);
+p4est_inspect_t    *p8est_balance_obj_get_inspect (p8est_balance_obj_t *
+                                                   bobj);
 
-void                p8est_balance_obj_set_notify (p8est_balance_obj_t * bobj, sc_notify_t * notify);
+void                p8est_balance_obj_set_notify (p8est_balance_obj_t * bobj,
+                                                  sc_notify_t * notify);
 
-sc_notify_t *       p8est_balance_obj_get_notify (p8est_balance_obj_t * bobj);
+sc_notify_t        *p8est_balance_obj_get_notify (p8est_balance_obj_t * bobj);
 
-void                p8est_balance_obj_set_adapt_flags (p8est_balance_obj_t * bobj, const int8_t* adapt_flags);
+void                p8est_balance_obj_sort_set_use_root (p8est_balance_obj_t *
+                                                         bobj, int use_root);
 
-const int8_t*       p8est_balance_obj_get_adapt_flags (p8est_balance_obj_t * bobj);
+void                p8est_balance_obj_set_adapt_flags (p8est_balance_obj_t *
+                                                       bobj,
+                                                       const int8_t *
+                                                       adapt_flags);
+
+const int8_t       *p8est_balance_obj_get_adapt_flags (p8est_balance_obj_t *
+                                                       bobj);
 
 void                p8est_balance_obj_set_replace (p8est_balance_obj_t * bobj,
                                                    p8est_replace_t

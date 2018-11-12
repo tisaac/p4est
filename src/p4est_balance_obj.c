@@ -70,43 +70,47 @@ p4est_balance_obj_get_comm (p4est_balance_obj_t * obj)
 }
 
 void
-p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj, p4est_inspect_t * inspect)
+p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj,
+                               p4est_inspect_t * inspect)
 {
   bobj->inspect = inspect;
 }
 
-p4est_inspect_t *
+p4est_inspect_t    *
 p4est_balance_obj_get_inspect (p4est_balance_obj_t * bobj)
 {
   return bobj->inspect;
 }
 
 void
-p4est_balance_obj_set_notify (p4est_balance_obj_t * bobj, sc_notify_t * notify)
+p4est_balance_obj_set_notify (p4est_balance_obj_t * bobj,
+                              sc_notify_t * notify)
 {
   bobj->notify = notify;
 }
 
-sc_notify_t *
+sc_notify_t        *
 p4est_balance_obj_get_notify (p4est_balance_obj_t * bobj)
 {
   return bobj->notify;
 }
 
 void
-p4est_balance_obj_set_adapt_flags (p4est_balance_obj_t * bobj, const int8_t* adapt_flags)
+p4est_balance_obj_set_adapt_flags (p4est_balance_obj_t * bobj,
+                                   const int8_t * adapt_flags)
 {
   bobj->adapt_flags = adapt_flags;
 }
 
-const int8_t *
+const int8_t       *
 p4est_balance_obj_get_adapt_flags (p4est_balance_obj_t * bobj)
 {
   return bobj->adapt_flags;
 }
 
 void
-p4est_balance_obj_set_stats (p4est_balance_obj_t * bobj, sc_statistics_t * stats)
+p4est_balance_obj_set_stats (p4est_balance_obj_t * bobj,
+                             sc_statistics_t * stats)
 {
   bobj->stats = stats;
 }
@@ -182,8 +186,16 @@ p4est_balance_obj_get_replace (p4est_balance_obj_t * bobj)
   return bobj->replace_fn;
 }
 
-extern void p4est_balance_sort (p4est_balance_obj_t * bobj, p4est_t *p4est);
-extern void p4est_balance_tworound (p4est_balance_obj_t * bobj, p4est_t *p4est);
+void
+p4est_balance_obj_sort_set_use_root (p4est_balance_obj_t * bobj, int use_root)
+{
+  bobj->use_root = use_root;
+}
+
+extern void         p4est_balance_sort (p4est_balance_obj_t * bobj,
+                                        p4est_t * p4est);
+extern void         p4est_balance_tworound (p4est_balance_obj_t * bobj,
+                                            p4est_t * p4est);
 
 void
 p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t * p4est)
@@ -198,7 +210,8 @@ p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t * p4est)
                             p4est_connect_type_string (ctype),
                             (long long) p4est->global_num_quadrants);
   p4est_log_indent_push ();
-  P4EST_GLOBAL_INFOF ("Balance algorithm: %s\n", p4est_balance_method_strings[method]);
+  P4EST_GLOBAL_INFOF ("Balance algorithm: %s\n",
+                      p4est_balance_method_strings[method]);
   P4EST_ASSERT (p4est_is_valid (p4est));
   /* remember input quadrant count; it will not decrease */
   old_gnq = p4est->global_num_quadrants;
@@ -215,9 +228,7 @@ p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t * p4est)
   }
   /* compute global number of quadrants */
   p4est_comm_count_quadrants (p4est);
-  if (bobj->inspect) {
-    pre_adapt_flags = bobj->inspect->pre_adapt_flags;
-  }
+  pre_adapt_flags = p4est_balance_obj_get_adapt_flags (bobj);
   P4EST_ASSERT (pre_adapt_flags || p4est->global_num_quadrants >= old_gnq);
   if (pre_adapt_flags || old_gnq != p4est->global_num_quadrants) {
     ++p4est->revision;
@@ -229,4 +240,3 @@ p4est_balance_obj (p4est_balance_obj_t * bobj, p4est_t * p4est)
                             "_balance with %lld total quadrants\n",
                             (long long) p4est->global_num_quadrants);
 }
-

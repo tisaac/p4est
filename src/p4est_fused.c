@@ -150,8 +150,7 @@ void
 p4est_adapt_fused_reference (p4est_t * p4est,
                              const int8_t * adapt_flag,
                              int copy_data,
-                             p4est_connect_type_t
-                             balance_type,
+                             p4est_balance_obj_t * bobj,
                              int repartition,
                              int partition_for_coarsening,
                              int ghost_layer_width,
@@ -167,6 +166,7 @@ p4est_adapt_fused_reference (p4est_t * p4est,
   fusion_ctx_t        fusion_ctx;
   void               *orig_ctx;
   int8_t             *aflag_copy;
+  int                 has_bobj = (bobj != NULL);
 
   if (*p4est_out != p4est) {
     *p4est_out = p4est_copy (p4est, copy_data);
@@ -194,7 +194,16 @@ p4est_adapt_fused_reference (p4est_t * p4est,
                     *replace_fn);
 
   P4EST_FREE (aflag_copy);
-  p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
+  if (!has_bobj) {
+    bobj = p4est_balance_obj_new (p4est->mpicomm);
+    p4est_balance_obj_set_init (bobj, init_fn);
+    p4est_balance_obj_set_replace (bobj, replace_fn);
+  }
+  p4est_balance_obj (bobj, *p4est_out);
+  if (!has_bobj) {
+    p4est_balance_obj_destroy (bobj);
+  }
+
   if (repartition) {
     p4est_partition (*p4est_out, partition_for_coarsening, weight_fn);
   }
@@ -753,8 +762,7 @@ void
 p4est_adapt_fused (p4est_t * p4est,
                    const int8_t * adapt_flag,
                    int copy_data,
-                   p4est_connect_type_t
-                   balance_type,
+                   p4est_balance_obj_t * bobj,
                    int repartition,
                    int partition_for_coarsening,
                    int ghost_layer_width,
@@ -767,9 +775,10 @@ p4est_adapt_fused (p4est_t * p4est,
 {
   p4est_inspect_t     inspect;
   p4est_inspect_t    *inspect_orig;
-  int                 own_notify = 0;
+  sc_notify_t        *notify;
   sc_notify_type_t    type;
   sc_flopinfo_t       snap;
+  int                 has_bobj = (bobj != NULL);
 
   P4EST_FUNC_SNAP (p4est, &snap);
 
@@ -784,23 +793,26 @@ p4est_adapt_fused (p4est_t * p4est,
   else {
     (*p4est_out)->inspect = inspect_orig;
   }
-  (*p4est_out)->inspect->pre_adapt_flags = adapt_flag;
-  if (!(*p4est_out)->inspect->notify) {
-    (*p4est_out)->inspect->notify = sc_notify_new (p4est->mpicomm);
-    own_notify = 1;
+  if (!has_bobj) {
+    bobj = p4est_balance_obj_new (p4est->mpicomm);
+    p4est_balance_obj_set_init (bobj, init_fn);
+    p4est_balance_obj_set_replace (bobj, replace_fn);
   }
-  type = sc_notify_get_type ((*p4est_out)->inspect->notify);
-  if (type == SC_NOTIFY_SUPERSET) {
-    sc_notify_superset_set_callback ((*p4est_out)->inspect->notify,
-                                     p4est_superset_callback, (void *) p4est);
+  notify = p4est_balance_obj_get_notify (bobj);
+  if (notify) {
+    type = sc_notify_get_type (notify);
+    if (type == SC_NOTIFY_SUPERSET) {
+      sc_notify_superset_set_callback (notify,
+                                       p4est_superset_callback,
+                                       (void *) p4est);
+    }
   }
-  /* TODO: use balance_obj here */
-  p4est_balance_ext (*p4est_out, balance_type, init_fn, replace_fn);
-  if (own_notify) {
-    sc_notify_destroy ((*p4est_out)->inspect->notify);
-    (*p4est_out)->inspect->notify = NULL;
+  p4est_balance_obj_set_adapt_flags (bobj, adapt_flag);
+  p4est_balance_obj (bobj, *p4est_out);
+  p4est_balance_obj_set_adapt_flags (bobj, NULL);
+  if (!has_bobj) {
+    p4est_balance_obj_destroy (bobj);
   }
-  (*p4est_out)->inspect->pre_adapt_flags = NULL;
   p4est_adapt_fused_partition_ghost (*p4est_out, repartition,
                                      partition_for_coarsening,
                                      ghost_layer_width, ghost_type, weight_fn,

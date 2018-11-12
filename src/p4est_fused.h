@@ -35,6 +35,7 @@
 #include <p4est.h>
 #include <p4est_ghost.h>
 #include <p4est_extended.h>
+#include <p4est_balance_obj.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -76,7 +77,7 @@ enum
 void                p4est_adapt_fused (p4est_t * p4est,
                                        const int8_t * adapt_flag,
                                        int copy_data,
-                                       p4est_connect_type_t balance_type,
+                                       p4est_balance_obj_t * bobj,
                                        int repartition,
                                        int partition_for_coarsening,
                                        int ghost_layer_width,
@@ -90,8 +91,7 @@ void                p4est_adapt_fused (p4est_t * p4est,
 void                p4est_adapt_fused_reference (p4est_t * p4est,
                                                  const int8_t * adapt_flag,
                                                  int copy_data,
-                                                 p4est_connect_type_t
-                                                 balance_type,
+                                                 p4est_balance_obj_t * bobj,
                                                  int repartition,
                                                  int partition_for_coarsening,
                                                  int ghost_layer_width,
