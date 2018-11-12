@@ -86,29 +86,7 @@ enum
 {
   TIMINGS_REFINE,
   TIMINGS_BALANCE,
-  TIMINGS_BALANCE_A,
-  TIMINGS_BALANCE_COMM,
-  TIMINGS_BALANCE_B,
-  TIMINGS_BALANCE_A_COUNT_IN,
-  TIMINGS_BALANCE_A_COUNT_OUT,
-  TIMINGS_BALANCE_COMM_SENT,
-  TIMINGS_BALANCE_COMM_NZPEERS,
-  TIMINGS_BALANCE_B_COUNT_IN,
-  TIMINGS_BALANCE_B_COUNT_OUT,
-  TIMINGS_BALANCE_A_ZERO_SENDS,
-  TIMINGS_BALANCE_A_ZERO_RECEIVES,
-  TIMINGS_BALANCE_B_ZERO_SENDS,
-  TIMINGS_BALANCE_B_ZERO_RECEIVES,
   TIMINGS_REBALANCE,
-  TIMINGS_REBALANCE_A,
-  TIMINGS_REBALANCE_COMM,
-  TIMINGS_REBALANCE_B,
-  TIMINGS_REBALANCE_A_COUNT_IN,
-  TIMINGS_REBALANCE_A_COUNT_OUT,
-  TIMINGS_REBALANCE_COMM_SENT,
-  TIMINGS_REBALANCE_COMM_NZPEERS,
-  TIMINGS_REBALANCE_B_COUNT_IN,
-  TIMINGS_REBALANCE_B_COUNT_OUT,
   TIMINGS_PARTITION,
   TIMINGS_GHOSTS,
   TIMINGS_NODES,
@@ -246,6 +224,7 @@ main (int argc, char **argv)
   const timings_regression_t *r, *regression;
   timings_config_t    config;
   sc_statinfo_t       stats[TIMINGS_NUM_STATS];
+  sc_statistics_t     *balstats, *rebalstats, *stats_in;
   sc_flopinfo_t       fi, snapshot;
   mpi_context_t       mpi_context, *mpi = &mpi_context;
   sc_options_t       *opt;
@@ -514,46 +493,19 @@ main (int argc, char **argv)
   count_refined = p4est->global_num_quadrants;
 
   /* time balance */
+  balstats = sc_statistics_new (mpi->mpicomm);
+  stats_in = NULL;
+  if (p4est->inspect) {
+    stats_in = p4est->inspect->stats;
+    p4est->inspect->stats = balstats;
+  }
   sc_flops_snap (&fi, &snapshot);
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[TIMINGS_BALANCE], snapshot.iwtime, "Balance");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_A],
-                 p4est->inspect->balance_A, "Balance A time");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM],
-                 p4est->inspect->balance_comm, "Balance comm time");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_B],
-                 p4est->inspect->balance_B, "Balance B time");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_COUNT_IN],
-                 (double) p4est->inspect->balance_A_count_in,
-                 "Balance A count inlist");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_COUNT_OUT],
-                 (double) p4est->inspect->balance_A_count_out,
-                 "Balance A count outlist");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM_SENT],
-                 (double) p4est->inspect->balance_comm_sent,
-                 "Balance sent second round");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM_NZPEERS],
-                 (double) p4est->inspect->balance_comm_nzpeers,
-                 "Balance nonzero peers second round");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_IN],
-                 (double) p4est->inspect->balance_B_count_in,
-                 "Balance B count inlist");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_OUT],
-                 (double) p4est->inspect->balance_B_count_out,
-                 "Balance B count outlist");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_RECEIVES],
-                 p4est->inspect->balance_zero_receives[0],
-                 "Balance A zero receives");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_SENDS],
-                 p4est->inspect->balance_zero_sends[0],
-                 "Balance A zero sends");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_ZERO_RECEIVES],
-                 p4est->inspect->balance_zero_receives[1],
-                 "Balance B zero receives");
-  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_ZERO_SENDS],
-                 p4est->inspect->balance_zero_sends[1],
-                 "Balance B zero sends");
+  if (p4est->inspect) {
+    p4est->inspect->stats = stats_in;
+  }
 #ifdef P4EST_TIMINGS_VTK
   p4est_vtk_write_file (p4est, "timings_balanced");
 #endif
@@ -561,34 +513,19 @@ main (int argc, char **argv)
   crc = p4est_checksum (p4est);
 
   /* time rebalance - is a noop on the tree */
+  rebalstats = sc_statistics_new (mpi->mpicomm);
+  stats_in = NULL;
+  if (p4est->inspect) {
+    stats_in = p4est->inspect->stats;
+    p4est->inspect->stats = rebalstats;
+  }
   sc_flops_snap (&fi, &snapshot);
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[TIMINGS_REBALANCE], snapshot.iwtime, "Rebalance");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_A],
-                 p4est->inspect->balance_A, "Rebalance A time");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM],
-                 p4est->inspect->balance_comm, "Rebalance comm time");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_B],
-                 p4est->inspect->balance_B, "Rebalance B time");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_A_COUNT_IN],
-                 (double) p4est->inspect->balance_A_count_in,
-                 "Rebalance A count inlist");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_A_COUNT_OUT],
-                 (double) p4est->inspect->balance_A_count_out,
-                 "Rebalance A count outlist");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM_SENT],
-                 (double) p4est->inspect->balance_comm_sent,
-                 "Rebalance sent second round");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM_NZPEERS],
-                 (double) p4est->inspect->balance_comm_nzpeers,
-                 "Rebalance nonzero peers second round");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_B_COUNT_IN],
-                 (double) p4est->inspect->balance_B_count_in,
-                 "Rebalance B count inlist");
-  sc_stats_set1 (&stats[TIMINGS_REBALANCE_B_COUNT_OUT],
-                 (double) p4est->inspect->balance_B_count_out,
-                 "Rebalance B count outlist");
+  if (p4est->inspect) {
+    p4est->inspect->stats = stats_in;
+  }
   P4EST_ASSERT (count_balanced == p4est->global_num_quadrants);
   P4EST_ASSERT (crc == p4est_checksum (p4est));
 
@@ -722,6 +659,13 @@ main (int argc, char **argv)
   sc_stats_compute (mpi->mpicomm, TIMINGS_NUM_STATS, stats);
   sc_stats_print (p4est_package_id, SC_LP_STATISTICS,
                   TIMINGS_NUM_STATS, stats, 1, 1);
+  sc_statistics_compute (balstats);
+  sc_statistics_print (balstats, p4est_package_id, SC_LP_ESSENTIAL, 1, 1);
+  sc_statistics_destroy (balstats);
+
+  sc_statistics_compute (rebalstats);
+  sc_statistics_print (rebalstats, p4est_package_id, SC_LP_ESSENTIAL, 1, 1);
+  sc_statistics_destroy (rebalstats);
 
   /* destroy the p4est and its connectivity structure */
   P4EST_FREE (quadrant_counts);

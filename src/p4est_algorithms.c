@@ -2321,7 +2321,10 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
   sc_mempool_t       *list_alloc;
   sc_array_t         *inlist, *outlist;
   size_t              ocount;
+  sc_flopinfo_t       snap;
   p4est_quadrant_t    root;
+
+  P4EST_FUNC_SNAP (p4est, &snap);
 
   P4EST_ASSERT (which_tree >= p4est->first_local_tree);
   P4EST_ASSERT (which_tree <= p4est->last_local_tree);
@@ -2426,6 +2429,7 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
       p4est->inspect->balance_B_count_out += count_already_outlist;
     }
   }
+  P4EST_FUNC_SHOT (p4est, &snap);
 }
 
 void

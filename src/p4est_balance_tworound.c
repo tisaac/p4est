@@ -434,27 +434,37 @@ enum {
   BALANCE_B_TIME,
   BALANCE_B_COUNT_IN,
   BALANCE_B_COUNT_OUT,
+  COMPLETE_OR_BALANCE,
+  SUBTREE_REPLACE,
   BALANCE_NUM_STATS
 };
 
 static const char *balance_stat_names[BALANCE_NUM_STATS] = {
-                                                    "balance_A time",
-                                                    "balance_A count in",
-                                                    "balance_A count out",
-                                                    "balance comm time",
-                                                    "balance comm sent",
-                                                    "balance comm nzpeers",
-                                                    "balance load sends 0",
-                                                    "balance load sends 1",
-                                                    "balance load recvs 0",
-                                                    "balance load recvs 1",
-                                                    "balance zero sends 0",
-                                                    "balance zero sends 1",
-                                                    "balance zero recvs 0",
-                                                    "balance zero recvs 1",
-                                                    "balance_B time",
-                                                    "balance_B count in",
-                                                    "balance_B count out"};
+                                                    "Balance A time",
+                                                    "Balance A count inlist",
+                                                    "Balance A count outlist",
+                                                    "Balance comm time",
+                                                    "Balance sent second round",
+                                                    "Balance nonzero peers second round",
+                                                    "Balance nonzero sends 0",
+                                                    "Balance nonzero sends 1",
+                                                    "Balance nonzero recvs 0",
+                                                    "Balance nonzero recvs 1",
+                                                    "Balance A zero sends",
+                                                    "Balance B zero sends",
+                                                    "Balance A zero receives",
+                                                    "Balance B zero receives",
+                                                    "Balance B time",
+                                                    "Balance B count inlist",
+                                                    "Balance B count outlist",
+#ifndef P4_TO_P8
+                                                    "p4est_complete_or_balance", /* pre-register so always present */
+                                                    "p4est_subtree_replace", /* pre-register so always present */
+#else
+                                                    "p8est_complete_or_balance",
+                                                    "p8est_subtree_replace", /* pre-register so always present */
+#endif
+};
 
 void
 p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
@@ -658,6 +668,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   /* TODO: get accumulation from algorithms.h files */
   if (p4est->inspect != NULL) {
     p4est->inspect->use_B = 0;
+    p4est->inspect->balance_A_count_in = 0;
+    p4est->inspect->balance_A_count_out = 0;
   }
 
   /* loop over all local trees to assemble first send list */
@@ -690,8 +702,19 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
                     (unsigned long long) tquadrants->elem_count);
 
     /* local balance first pass */
-    p4est_balance_subtree_ext (p4est, btype, nt, this_pre_adapt_flags,
-                               init_fn, replace_fn);
+    {
+      p4est_inspect_t *inspect_in = p4est->inspect;
+      p4est_inspect_t this_inspect;
+
+      memset(&this_inspect,0,sizeof(p4est_inspect_t));
+      this_inspect.stats = stats;
+      p4est->inspect = &this_inspect;
+
+      p4est_balance_subtree_ext (p4est, btype, nt, this_pre_adapt_flags,
+                                 init_fn, replace_fn);
+
+      p4est->inspect = inspect_in;
+    }
     treecount = tquadrants->elem_count;
     P4EST_VERBOSEF ("Balance tree %lld A %llu\n",
                     (long long) nt, (unsigned long long) treecount);
@@ -897,6 +920,10 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 
   /* end balance_A, start balance_comm */
   balance_stats[BALANCE_A_TIME] += sc_MPI_Wtime ();
+  if (p4est->inspect != NULL) {
+    balance_stats[BALANCE_A_COUNT_IN] += p4est->inspect->balance_A_count_in;
+    balance_stats[BALANCE_A_COUNT_OUT] += p4est->inspect->balance_A_count_out;
+  }
   balance_stats[BALANCE_COMM_SENT] = 0;
   balance_stats[BALANCE_COMM_NZPEERS] = 0;
   for (k = 0; k < 2; ++k) {
@@ -1206,6 +1233,8 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   balance_stats[BALANCE_B_TIME] = -sc_MPI_Wtime ();
   if (p4est->inspect != NULL) {
     p4est->inspect->use_B = 1;
+    p4est->inspect->balance_A_count_in = 1;
+    p4est->inspect->balance_A_count_out = 1;
   }
   if (own_notify) {
     sc_notify_destroy (notify);
@@ -1289,6 +1318,10 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
 
   /* end balance_B */
   balance_stats[BALANCE_B_TIME] += sc_MPI_Wtime ();
+  if (p4est->inspect != NULL) {
+    balance_stats[BALANCE_B_COUNT_IN] += p4est->inspect->balance_B_count_in;
+    balance_stats[BALANCE_B_COUNT_OUT] += p4est->inspect->balance_B_count_out;
+  }
 
 #ifdef P4EST_ENABLE_MPI
   /* wait for all send operations */
@@ -1370,9 +1403,9 @@ p4est_balance_tworound (p4est_balance_obj_t *bobj, p4est_t *p4est)
   if (stats) {
     int i;
 
-    for (i = 0; i < BALANCE_NUM_STATS; i++) {
-      printf ("Stat %s\n", balance_stat_names[i]);
-      P4EST_ASSERT(balance_stats[i] == balance_stats[i]);
+    /* Do not need to accumulate the preregistered functions, hence -2 */
+    for (i = 0; i < BALANCE_NUM_STATS - 2; i++) {
+      P4EST_LDEBUGF ("name %s, %f\n", balance_stat_names[i], balance_stats[i]);
       sc_statistics_accumulate (stats, balance_stat_names[i], balance_stats[i]);
     }
   }
