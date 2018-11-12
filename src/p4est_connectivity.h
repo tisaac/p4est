@@ -524,9 +524,9 @@ void                p4est_find_corner_transform (p4est_connectivity_t *
  *             [6,8]       The coordinate shift (in multiples of the root
  *                         length)
  */
-void               
-p4est_corner_transform_to_utransform (p4est_corner_transform_t * ct,
-                                      int icorner, int utransform[]);
+void
+ p4est_corner_transform_to_utransform (p4est_corner_transform_t * ct,
+                                       int icorner, int utransform[]);
 
 /** Internally connect a connectivity based on tree_to_vertex information.
  * Periodicity that is not inherent in the list of vertices will be lost.

@@ -1452,17 +1452,17 @@ p4est_quadrant_disjoint_parent (const void *a, const void *b)
 }
 
 int
-p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
+p4est_quadrant_array_is_reduced (sc_array_t * tquadrants)
 {
-  size_t s, n = tquadrants->elem_count;
-  p4est_quadrant_t  prevp;
+  size_t              s, n = tquadrants->elem_count;
+  p4est_quadrant_t    prevp;
 
   if (!sc_array_is_sorted (tquadrants, p4est_quadrant_compare)) {
     return 0;
   }
   for (s = 0; s < n; s++) {
-    p4est_quadrant_t *q = p4est_quadrant_array_index (tquadrants, s);
-    p4est_quadrant_t qp;
+    p4est_quadrant_t   *q = p4est_quadrant_array_index (tquadrants, s);
+    p4est_quadrant_t    qp;
 
     if (!q->level) {
       return 0;
@@ -1481,11 +1481,10 @@ p4est_quadrant_array_is_reduced (sc_array_t *tquadrants)
   return 1;
 }
 
-
 static void
-p4est_quadrant_array_reduced_insert (sc_array_t *array, p4est_quadrant_t *q)
+p4est_quadrant_array_reduced_insert (sc_array_t * array, p4est_quadrant_t * q)
 {
-  ssize_t si;
+  ssize_t             si;
   P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
 
   if (!q->level) {
@@ -1494,15 +1493,15 @@ p4est_quadrant_array_reduced_insert (sc_array_t *array, p4est_quadrant_t *q)
 
   si = sc_array_bsearch (array, q, p4est_quadrant_disjoint_parent);
   if (si >= 0) {
-    p4est_quadrant_t *p = p4est_quadrant_array_index (array, si);
+    p4est_quadrant_t   *p = p4est_quadrant_array_index (array, si);
 
     if (p->level < q->level) {
       *p = *q;
     }
   }
   else {
-    p4est_quadrant_t *p;
-    size_t acount = array->elem_count;
+    p4est_quadrant_t   *p;
+    size_t              acount = array->elem_count;
 
     si = p4est_find_lower_bound (array, q, 0);
     if (si < 0) {
@@ -1520,13 +1519,13 @@ p4est_quadrant_array_reduced_insert (sc_array_t *array, p4est_quadrant_t *q)
 }
 
 void
-p4est_quadrant_array_insert_endpoints (sc_array_t *inlist,
-                                       p4est_quadrant_t *dom,
-                                       p4est_quadrant_t *first_desc,
-                                       p4est_quadrant_t *last_desc)
+p4est_quadrant_array_insert_endpoints (sc_array_t * inlist,
+                                       p4est_quadrant_t * dom,
+                                       p4est_quadrant_t * first_desc,
+                                       p4est_quadrant_t * last_desc)
 {
-  int minlevel = dom->level + 1;
-  p4est_quadrant_t fd, tempq, tempp;
+  int                 minlevel = dom->level + 1;
+  p4est_quadrant_t    fd, tempq, tempp;
 
   P4EST_ASSERT (p4est_quadrant_array_is_reduced (inlist));
 
@@ -1536,7 +1535,8 @@ p4est_quadrant_array_insert_endpoints (sc_array_t *inlist,
     while (fd.level >= minlevel && p4est_quadrant_child_id (&fd) == 0) {
       p4est_quadrant_parent (&fd, &fd);
     }
-    P4EST_ASSERT (p4est_quadrant_is_equal (dom, &fd) || p4est_quadrant_is_ancestor (dom, &fd));
+    P4EST_ASSERT (p4est_quadrant_is_equal (dom, &fd)
+                  || p4est_quadrant_is_ancestor (dom, &fd));
     p4est_quadrant_sibling (&fd, &tempq, 0);
     tempq.p.user_int = 0;
     p4est_quadrant_array_reduced_insert (inlist, &tempq);
@@ -1548,7 +1548,8 @@ p4est_quadrant_array_insert_endpoints (sc_array_t *inlist,
            p4est_quadrant_child_id (&tempq) == P4EST_CHILDREN - 1) {
       p4est_quadrant_parent (&tempq, &tempq);
     }
-    P4EST_ASSERT (p4est_quadrant_is_equal (dom, &tempq) || p4est_quadrant_is_ancestor (dom, &tempq));
+    P4EST_ASSERT (p4est_quadrant_is_equal (dom, &tempq)
+                  || p4est_quadrant_is_ancestor (dom, &tempq));
     p4est_quadrant_sibling (&tempq, &tempp, 0);
     tempp.p.user_int = 0;
     p4est_quadrant_array_reduced_insert (inlist, &tempp);
@@ -1648,7 +1649,9 @@ p4est_balance_kernel (sc_array_t * inlist,
     q = p4est_quadrant_array_index (inlist, jz);
     q->p.user_int = 0;
     maxlevel = SC_MAX (maxlevel, q->level);
-    P4EST_ASSERT (!dom || p4est_quadrant_is_ancestor (dom, q) || p4est_quadrant_is_equal (dom, q) || p4est_quadrant_is_sibling (dom, q));
+    P4EST_ASSERT (!dom || p4est_quadrant_is_ancestor (dom, q)
+                  || p4est_quadrant_is_equal (dom, q)
+                  || p4est_quadrant_is_sibling (dom, q));
     P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
   }
 
@@ -1691,7 +1694,7 @@ p4est_balance_kernel (sc_array_t * inlist,
   /* we don't need to run for minlevel + 1, because all of the quads that
    * would be created would be outside dom */
   for (l = maxlevel; l > minlevel + 1; l--) {
-    ocount = outlist[l].elem_count;   /* ocount is not growing */
+    ocount = outlist[l].elem_count;     /* ocount is not growing */
     olist = &outlist[l - 1];
     for (jz = 0; jz < incount + ocount; ++jz) {
       if (jz < incount) {
@@ -1703,17 +1706,17 @@ p4est_balance_kernel (sc_array_t * inlist,
       }
       else {
         qpointer =
-                  (p4est_quadrant_t **) sc_array_index (&outlist[l], jz - incount);
+          (p4est_quadrant_t **) sc_array_index (&outlist[l], jz - incount);
         q = *qpointer;
         P4EST_ASSERT ((int) q->level == l);
       }
       P4EST_ASSERT (!dom || p4est_quadrant_is_ancestor (dom, q));
       P4EST_ASSERT (p4est_quadrant_child_id (q) == 0);
 
-      p4est_quadrant_parent (q, &par);        /* get the parent */
-      ph = P4EST_QUADRANT_LEN (par.level - 1);        /* twice its size */
-      pid = p4est_quadrant_child_id (&par);   /* and position */
-      p4est_quadrant_sibling (&par, &par, 0); /* now shift to 0 */
+      p4est_quadrant_parent (q, &par);  /* get the parent */
+      ph = P4EST_QUADRANT_LEN (par.level - 1);  /* twice its size */
+      pid = p4est_quadrant_child_id (&par);     /* and position */
+      p4est_quadrant_sibling (&par, &par, 0);   /* now shift to 0 */
 
       for (sid = 0; sid < bound; sid++) {
         *qalloc = par;
@@ -1874,8 +1877,7 @@ p4est_balance_kernel (sc_array_t * inlist,
         sc_mempool_free (qpool, qalloc);
         continue;
       }
-      if (last_desc != NULL
-          && p4est_quadrant_compare (qalloc, last_desc) > 0) {
+      if (last_desc != NULL && p4est_quadrant_compare (qalloc, last_desc) > 0) {
         sc_mempool_free (qpool, qalloc);
         continue;
       }
@@ -1909,16 +1911,17 @@ p4est_balance_kernel (sc_array_t * inlist,
 }
 
 void
-p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant_t *first_desc, p4est_quadrant_t *last_desc,
-                       sc_array_t *out)
+p4est_complete_kernel (sc_array_t * inlist, p4est_quadrant_t * dom,
+                       p4est_quadrant_t * first_desc,
+                       p4est_quadrant_t * last_desc, sc_array_t * out)
 {
-  int minlevel = dom->level + 1;
-  size_t ocount, incount, jz;
-  p4est_quadrant_t fd, ld, tempq, tempp;
-  ssize_t si;
-  p4est_quadrant_t *q, *r;
-  int pid;
-  uint64_t lid;
+  int                 minlevel = dom->level + 1;
+  size_t              ocount, incount, jz;
+  p4est_quadrant_t    fd, ld, tempq, tempp;
+  ssize_t             si;
+  p4est_quadrant_t   *q, *r;
+  int                 pid;
+  uint64_t            lid;
 
   P4EST_ASSERT (p4est_quadrant_array_is_reduced (inlist));
 
@@ -1937,7 +1940,8 @@ p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant
   else {
     fd = *dom;
   }
-  P4EST_ASSERT (p4est_quadrant_is_equal (dom, &fd) || p4est_quadrant_is_ancestor (dom, &fd));
+  P4EST_ASSERT (p4est_quadrant_is_equal (dom, &fd)
+                || p4est_quadrant_is_ancestor (dom, &fd));
 
   /* step through inlist and fill in the gaps in out */
   /* note: we add to the end of out */
@@ -1968,7 +1972,8 @@ p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant
       lid = p4est_quadrant_linear_id (last_desc, P4EST_QMAXLEVEL);
       lid++;
       p4est_quadrant_set_morton (&ld, P4EST_QMAXLEVEL, lid);
-      P4EST_ASSERT (p4est_quadrant_is_equal (dom, &ld) || p4est_quadrant_is_ancestor (dom, &ld));
+      P4EST_ASSERT (p4est_quadrant_is_equal (dom, &ld)
+                    || p4est_quadrant_is_ancestor (dom, &ld));
       q = &ld;
     }
   }
@@ -2066,7 +2071,7 @@ p4est_complete_kernel (sc_array_t *inlist, p4est_quadrant_t *dom, p4est_quadrant
 
 #ifdef P4EST_ENABLE_DEBUG
   {
-    sc_array_t outview;
+    sc_array_t          outview;
 
     sc_array_init_view (&outview, out, ocount, out->elem_count - ocount);
     P4EST_ASSERT (sc_array_is_sorted (&outview, p4est_quadrant_compare));
@@ -2084,8 +2089,7 @@ void
 p4est_replace_recursive (p4est_t * p4est, p4est_topidx_t nt,
                          sc_array_t * array, size_t start, size_t end,
                          p4est_quadrant_t * parent,
-                         p4est_init_t init_fn,
-                         p4est_replace_t replace_fn)
+                         p4est_init_t init_fn, p4est_replace_t replace_fn)
 {
   p4est_quadrant_t    fam[P4EST_CHILDREN];
   p4est_quadrant_t   *famp[P4EST_CHILDREN];
@@ -2132,11 +2136,12 @@ p4est_replace_recursive (p4est_t * p4est, p4est_topidx_t nt,
 }
 
 void
-p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, const int8_t * pre_adapt_flags)
+p4est_quadrant_array_reduce (sc_array_t * tquadrants, sc_array_t * inlist,
+                             const int8_t * pre_adapt_flags)
 {
-  p4est_quadrant_t *q = NULL, *p, tempq;
-  p4est_quadrant_t  pp, qp;
-  size_t iz, jz, tcount = tquadrants->elem_count;
+  p4est_quadrant_t   *q = NULL, *p, tempq;
+  p4est_quadrant_t    pp, qp;
+  size_t              iz, jz, tcount = tquadrants->elem_count;
 
   P4EST_QUADRANT_INIT (&tempq);
 
@@ -2160,7 +2165,7 @@ p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, const i
         }
       }
     }
-    if (!(p->level)) { /* do not include root level quadrants */
+    if (!(p->level)) {          /* do not include root level quadrants */
       continue;
     }
     p4est_quadrant_parent (p, &pp);
@@ -2171,7 +2176,9 @@ p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, const i
       }
       continue;
     }
-    q = inlist ? (p4est_quadrant_t *) sc_array_push (inlist) : p4est_quadrant_array_index (tquadrants, jz++);
+    q =
+      inlist ? (p4est_quadrant_t *) sc_array_push (inlist) :
+      p4est_quadrant_array_index (tquadrants, jz++);
     p4est_quadrant_sibling (p, q, 0);
     qp = pp;
   }
@@ -2186,17 +2193,19 @@ p4est_quadrant_array_reduce (sc_array_t *tquadrants, sc_array_t *inlist, const i
 }
 
 void
-p4est_subtree_replace (p4est_t *p4est, p4est_topidx_t which_tree,
-                       sc_array_t *newquads, p4est_init_t init_fn,
+p4est_subtree_replace (p4est_t * p4est, p4est_topidx_t which_tree,
+                       sc_array_t * newquads, p4est_init_t init_fn,
                        p4est_replace_t replace_fn)
 {
-  p4est_tree_t *tree = p4est_tree_array_index (p4est->trees, which_tree);
-  sc_array_t *tquadrants = &tree->quadrants;
-  size_t iz, jz, jzstart = 0, jzend, ocount, tcount = tquadrants->elem_count;
-  p4est_quadrant_t *q, *p;
-  p4est_quadrant_t tempq;
-  sc_flopinfo_t snap;
-  int maxlevel;
+  p4est_tree_t       *tree =
+    p4est_tree_array_index (p4est->trees, which_tree);
+  sc_array_t         *tquadrants = &tree->quadrants;
+  size_t              iz, jz, jzstart = 0, jzend, ocount, tcount =
+    tquadrants->elem_count;
+  p4est_quadrant_t   *q, *p;
+  p4est_quadrant_t    tempq;
+  sc_flopinfo_t       snap;
+  int                 maxlevel;
 
   P4EST_FUNC_SNAP (p4est, &snap);
 
@@ -2383,18 +2392,17 @@ p4est_complete_or_balance (p4est_t * p4est, p4est_topidx_t which_tree,
 
   if (btype) {
     /* balance */
-    p4est_quadrant_array_insert_endpoints (inlist, &root, &(tree->first_desc), &(tree->last_desc));
-    p4est_balance_kernel (inlist, &root, 0, bound, qpool,
-                          list_alloc,
-                          &(tree->first_desc),
-                          &(tree->last_desc),
-                          &count_already_inlist,
-                          &count_already_outlist,
+    p4est_quadrant_array_insert_endpoints (inlist, &root, &(tree->first_desc),
+                                           &(tree->last_desc));
+    p4est_balance_kernel (inlist, &root, 0, bound, qpool, list_alloc,
+                          &(tree->first_desc), &(tree->last_desc),
+                          &count_already_inlist, &count_already_outlist,
                           &count_ancestor_inlist);
   }
 
   /* complete */
-  p4est_complete_kernel (inlist, &root, &(tree->first_desc), &(tree->last_desc), outlist);
+  p4est_complete_kernel (inlist, &root, &(tree->first_desc),
+                         &(tree->last_desc), outlist);
 
   ocount = outlist->elem_count;
 
