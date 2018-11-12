@@ -45,13 +45,15 @@
 
 SC_EXTERN_C_BEGIN;
 
+/** Opaque object for controlling the behavior of 2:1 balance algorithms */
 typedef struct p4est_balance_obj_s p4est_balance_obj_t;
 
+/** A list of methods (algorithms) for applying 2:1 balance */
 typedef enum
 {
-  P4EST_BALANCE_DEFAULT = -1,
-  P4EST_BALANCE_SORT = 0,
-  P4EST_BALANCE_TWOROUND,
+  P4EST_BALANCE_DEFAULT = -1, /**< The default is currently to use the two-round algorithm, but that may change in the future: explicitly set a particular algorithm if it is needed */
+  P4EST_BALANCE_SORT = 0, /**< Apply by having each process balance the full forest (in compressed form) and sorting the result leaves */
+  P4EST_BALANCE_TWOROUND, /**< Each process identifies other processes that it must communicate with and initiates a send/response communication pattern */
   P4EST_BALANCE_NUM_METHODS
 }
 p4est_balance_method_t;
@@ -65,6 +67,15 @@ extern p4est_balance_method_t p4est_balance_method_default;
 /** Names for each notify method */
 extern const char  *p4est_balance_method_strings[P4EST_BALANCE_NUM_METHODS];
 
+/** Create a balance object that can be customized and used to balance in
+ * \a p4est_balance_obj().
+ *
+ * \param[in] mpicomm  The communicator on which all processes are creating
+ *                     the same object.  (Should be the same as the p4est that
+ *                     it will act on).
+ * \return             A p4est_balance_obj_t pointer that can be destroyed
+ *                     with p4est_balancec_obj_destroy().
+ */
 p4est_balance_obj_t *p4est_balance_obj_new (sc_MPI_Comm mpicomm);
 void                p4est_balance_obj_destroy (p4est_balance_obj_t * bobj);
 
