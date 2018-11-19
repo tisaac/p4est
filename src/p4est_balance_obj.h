@@ -77,57 +77,165 @@ extern const char  *p4est_balance_method_strings[P4EST_BALANCE_NUM_METHODS];
  *                     with p4est_balancec_obj_destroy().
  */
 p4est_balance_obj_t *p4est_balance_obj_new (sc_MPI_Comm mpicomm);
+
+/** Destroy a balance object.
+ *
+ * \param[in] bobj  The balance object to be destroyed.
+ */
 void                p4est_balance_obj_destroy (p4est_balance_obj_t * bobj);
 
+/** Get the sc_MPI_Comm * object.
+ * 
+ * \param [in] bobj       Balance object from which communicator will be 
+ * 						  fetched from.
+ * \return 				  A sc_MPI_Comm pointer.
+ */
 sc_MPI_Comm         p4est_balance_obj_get_comm (p4est_balance_obj_t * notify);
 
+/** Set a sc_statistics_t * object from balance object.
+ *
+ * \param[in]     bobj        The balance object.
+ * \param[in]     stats       The sc_statistics_t * object.  
+ */
 void                p4est_balance_obj_set_stats (p4est_balance_obj_t * bobj,
                                                  sc_statistics_t * stats);
+
+/** Get the sc_statistics_t * object from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A sc_statistics_t * pointer.
+ */
 sc_statistics_t    *p4est_balance_obj_get_stats (p4est_balance_obj_t * bobj);
 
+/** Set a p4est_balance_method_t * value from balance object.
+ *
+ * \param[in]     bobj        The balance object.
+ * \param[in]     method      The p4est_balance_method_t * pointer.  
+ */
 void                p4est_balance_obj_set_method (p4est_balance_obj_t * bobj,
                                                   p4est_balance_method_t
                                                   method);
+
+/** Get the p4est_balance_method_t * object from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A sc_statistics_t * pointer.
+ */
 p4est_balance_method_t p4est_balance_obj_get_method (p4est_balance_obj_t *
                                                      bobj);
 
+/** Set a p4est_connect_type_t * value from balance object.
+ *
+ * \param[in]     bobj        The balance object.
+ * \param[in]     connect     The p4est_connect_type_t * pointer.  
+ */
 void                p4est_balance_obj_set_connect (p4est_balance_obj_t *
                                                    bobj,
                                                    p4est_connect_type_t
                                                    connect);
+
+/** Get the p4est_connect_type t * object from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A p4est_connect_type_t * pointer.
+ */
 p4est_connect_type_t p4est_balance_obj_get_connect (p4est_balance_obj_t *
                                                     bobj);
 
+/** Set a p4est_init_t * callback function from balance object.
+ *
+ * \param[in]     bobj        The balance object.
+ * \param[in]     init_fn     The p4est_init_t * pointer.  
+ */
 void                p4est_balance_obj_set_init (p4est_balance_obj_t * bobj,
                                                 p4est_init_t init_fn);
+
+/** Get the p4est_init_t t * callback function from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A p4est_init_t * pointer.
+ */
 p4est_init_t        p4est_balance_obj_get_init (p4est_balance_obj_t * bobj);
 
+/** Set a p4est_replace_t * callback function from balance object.
+ *
+ * \param[in]     bobj        The balance object.
+ * \param[in]     replace_fn     The p4est_replace_t * pointer.  
+ */
 void                p4est_balance_obj_set_replace (p4est_balance_obj_t * bobj,
                                                    p4est_replace_t
                                                    replace_fn);
+
+/** Get the p4est_replace_t * callback function from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A p4est_replace_t * pointer.
+ */
 p4est_replace_t     p4est_balance_obj_get_replace (p4est_balance_obj_t *
                                                    bobj);
 
+/** Set a adapt flags * value from balance object.
+ *
+ * \param[in]     bobj            The balance object.
+ * \param[in]     const int8_t    A const int8_t pointer to flags array.
+ */
 void                p4est_balance_obj_set_adapt_flags (p4est_balance_obj_t *
                                                        bobj,
                                                        const int8_t * flags);
+
+/** Get the adapt flags array * from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A const_int8_t * array pointer of adapt flags.
+ */
 const int8_t       *p4est_balance_obj_get_adapt_flags (p4est_balance_obj_t *
                                                        bobj);
 
+/** Set a p4est_inspect_t * object from balance object.
+ *
+ * \param[in]     bobj            The balance object.
+ * \param[in]     p4est_inspect_t The p4est_inspect_t * pointer.
+ */
 void                p4est_balance_obj_set_inspect (p4est_balance_obj_t * bobj,
                                                    p4est_inspect_t * inspect);
 
+/** Get the p4est_inspect_t * from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  A p4est_inspect_t * pointer.
+ */
 p4est_inspect_t    *p4est_balance_obj_get_inspect (p4est_balance_obj_t *
                                                    bobj);
 
+/** Set a sc_notify_t * object from balance object.
+ *
+ * \param[in]     bobj            The balance object.
+ * \param[in]     sc_notify_t     The sc_notify_t * pointer.
+ */
 void                p4est_balance_obj_set_notify (p4est_balance_obj_t * bobj,
                                                   sc_notify_t * notify);
 
+/** Get the sc_notify_t * from balance object.
+ * 
+ * \param [in] bobj       The balance object 
+ * \return 				  The sc_notify_t * pointer.
+ */
 sc_notify_t        *p4est_balance_obj_get_notify (p4est_balance_obj_t * bobj);
 
+/** Set a use_root int from balance object.
+ *
+ * \param[in]     bobj            The balance object.
+ * \param[in]     int		      The use_root integer.
+ */
 void                p4est_balance_obj_sort_set_use_root (p4est_balance_obj_t *
                                                          bobj, int use_root);
-
+/** Balance function that takes p4est and balance object as inputs.
+ * \ It will perform fusion balancing operations based on methods 
+ * \ stored in balance object.
+ *
+ * \param[in]     bobj			The balance object.
+ * \param[in]     p4est_t		The p4est object.
+ */
 void                p4est_balance_obj (p4est_balance_obj_t * bobj,
                                        p4est_t * p4est);
 
