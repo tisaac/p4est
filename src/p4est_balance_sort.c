@@ -1722,6 +1722,29 @@ p4est_process_level (p4est_t *p4est, int p)
   return SC_MIN(l_level, f_level);
 }
 
+enum {
+  NEIGH_SAME = 0,
+  NEIGH_LARGER,
+  NEIGH_SMALLER,
+};
+
+typedef struct neigh_info
+{
+  int root_proc;
+  int leaf_proc;
+  size_t count;
+}
+neigh_info_t;
+
+typedef struct neigh_entry
+{
+  union neigh_type {
+    neigh_info_t info;
+    p4est_quadrant_t quad;
+  } p;
+}
+neigh_entry_t;
+
 static void
 p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                           p4est_t * p4est, int flt, int llt, int num_trees,
@@ -1732,9 +1755,18 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
 {
   p4est_topidx_t      t;
   sc_flopinfo_t       snap;
-  size_t              nneigh = procs->elem_count;
+  size_t              nz, nneigh = procs->elem_count;
   int                 rank = p4est->mpirank;
   int                 tdeg = bobj->neighbor_tree;
+  int                *proc_type;
+  int                *proc_smaller;
+  int                *proc_rep;
+  int                 nneigh_larger = 0;
+  int                 nneigh_same = 0;
+  int                 nneigh_smaller = 0;
+  int                 nbranches = 0;
+  int                 maxbranch = 0;
+  sc_array_t         *smaller_bufs = NULL;
 
   P4EST_BAL_FUNC_SNAP (bobj, &snap);
   /* ghost neighbor balance */
@@ -1787,8 +1819,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
           }
           sc_array_init_view (&orig_view, tquads, qstart, qend - qstart);
           if (l == P4EST_INSUL / 2) {
-            p4est_balance_sort_divide (p4est, procs, neigh_bufs, t + flt,
-                                       &orig_view, 1);
+            p4est_balance_sort_divide (p4est, procs, neigh_bufs,
+                                       t + flt, &orig_view, 1);
           }
           else {
             size_t              z, sq;
@@ -1812,8 +1844,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                 P4EST_ASSERT (p4est_quadrant_is_valid (&trq[sq]));
               }
               sc_array_sort (&tform_quads, p4est_quadrant_compare);
-              p4est_balance_sort_divide (p4est, procs, neigh_bufs, tn->nt,
-                                         &tform_quads, 0);
+              p4est_balance_sort_divide (p4est, procs, neigh_bufs,
+                                         tn->nt, &tform_quads, 0);
               sc_array_truncate (&tform_quads);
             }
           }
@@ -1864,15 +1896,21 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     }
     sc_array_reset (&tform_quads);
   }
-  /* exchange, merge and complete */
+
+  proc_type = P4EST_ALLOC_ZERO (int, nneigh);
+  proc_rep = P4EST_ALLOC_ZERO (int, nneigh);
+  for (nz = 0; nz < nneigh; nz++) {
+    proc_rep[nz] = nz;
+  }
+  proc_smaller = P4EST_ALLOC (int, nneigh);
   if (tdeg > 0) {
     /* Gather statistics about the "sizes" of neighboring processes */
     size_t n;
-    int nneigh_larger = 0;
-    int nneigh_same = 0;
-    int nneigh_smaller = 0;
+    int b;
 
     int8_t my_level = p4est_process_level (p4est, rank);
+
+    P4EST_ASSERT (sizeof (neigh_entry_t) == sizeof (p4est_quadrant_t));
 
     if (stats) {
       if (!sc_statistics_has (stats, "balance neigh larger")) {
@@ -1891,17 +1929,21 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
       int8_t              this_level = p4est_process_level(p4est, p);
 
       if (p == rank) {
+        proc_type[n] = NEIGH_SAME;
         continue;
       }
 
       if (this_level < my_level) {
         nneigh_larger++;
+        proc_type[n] = NEIGH_LARGER;
       }
       else if (this_level == my_level) {
         nneigh_same++;
+        proc_type[n] = NEIGH_SAME;
       }
       else {
-        nneigh_smaller++;
+        proc_smaller[nneigh_smaller++] = (int) n;
+        proc_type[n] = NEIGH_SMALLER;
       }
     }
     if (stats) {
@@ -1909,7 +1951,49 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
       sc_statistics_accumulate (stats, "balance neigh same", (double) nneigh_same);
       sc_statistics_accumulate (stats, "balance neigh smaller", (double) nneigh_smaller);
     }
+    smaller_bufs = P4EST_ALLOC (sc_array_t, tdeg);
+    for (b = 0; b < tdeg; b++) {
+      size_t nzstart = (b * nneigh_smaller) / tdeg;
+      size_t nzend = ((b + 1) * nneigh_smaller) / tdeg;
+      size_t total_quads = 0;
+      size_t offset;
+      neigh_entry_t *ne;
+
+      for (n = nzstart; n < nzend; n++) {
+        int nz = proc_smaller[n];
+
+        total_quads += neigh_bufs[n].elem_count;
+      }
+      sc_array_init_size (&smaller_bufs[b], sizeof (neigh_entry_t), total_quads + (nzend - nzstart));
+      offset = 0;
+      for (n = nzstart; n < nzend; n++) {
+        int nz = proc_smaller[n];
+        sc_array_t *quads = &neigh_bufs[n];
+
+        ne = (neigh_entry_t *) sc_array_index(&smaller_bufs[b], offset++);
+        ne->p.info.root_proc = rank;
+        ne->p.info.leaf_proc = *((int *) sc_array_index (procs, nz));
+        ne->p.info.count = quads->elem_count;
+        if (quads->elem_count) {
+          memcpy (sc_array_index(&smaller_bufs[b], offset),
+                  sc_array_index(quads, 0),
+                  quads->elem_count * quads->elem_size);
+        }
+        offset += quads->elem_count;
+      }
+    }
   }
+  else {
+    nneigh_same = nneigh;
+  }
+  if (tdeg > 0) {
+    /* pack bufs going out to smaller procs */
+    int b;
+
+    for (b = 0; b < tdeg; b++) {
+    }
+  }
+  /* exchange, merge and complete */
   if (num_trees) {
 #ifdef P4EST_ENABLE_MPI
     size_t              n;
@@ -1917,6 +2001,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     sc_array_t         *recv_buf = NULL;
     int                 me = proc_hash[rank];
     int                 mpiret;
+    int                 nreq;
 
     P4EST_ASSERT (me > 0 && me <= nneigh);
 
@@ -2024,6 +2109,17 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
       }
     }
   }
+  if (tdeg > 0) {
+    int b;
+
+    for (b = 0; b < tdeg; b++) {
+      sc_array_reset(&smaller_bufs[b]);
+    }
+    P4EST_FREE (smaller_bufs);
+  }
+  P4EST_FREE (proc_smaller);
+  P4EST_FREE (proc_rep);
+  P4EST_FREE (proc_type);
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
