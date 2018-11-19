@@ -482,6 +482,7 @@ main (int argc, char **argv)
   const char         *balance_name;
   int                 ntop, nint, nbot;
   int                 balance_sort_root = 0;
+  int                 balance_sort_tdeg = 0;
   p4est_inspect_t     inspect;
   p4est_balance_obj_t *bobj;
   sc_notify_t         *notify;
@@ -553,6 +554,9 @@ main (int argc, char **argv)
   sc_options_add_int (opt, '\0', "balance-sort-root", &balance_sort_root,
                       balance_sort_root,
                       "use fully synchronous sorting in 2:1 balance");
+  sc_options_add_int (opt, '\0', "balance-sort-tdeg", &balance_sort_tdeg,
+                      balance_sort_tdeg,
+                      "tree-branching degree in balance-sort neigbor comm");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -594,6 +598,7 @@ main (int argc, char **argv)
   if (balance_sort_root) {
     p4est_balance_obj_sort_set_use_root (bobj, 1);
   }
+  p4est_balance_obj_sort_set_neigh_tree_degree (bobj, balance_sort_tdeg);
 
   sc_set_log_defaults (NULL, NULL, log_priority);
   p4est_init (NULL, log_priority);

@@ -86,6 +86,7 @@ const static int    p4est_corner_to_insul[P4EST_CHILDREN] = {
 #endif
 };
 
+/* Get and store all of the inter-tree transforms for a tree */
 static int
 p4est_tree_get_conn_info (p4est_balance_obj_t * bobj,
                           p4est_t * p4est, p4est_topidx_t t,
@@ -211,6 +212,7 @@ p4est_tree_get_conn_info (p4est_balance_obj_t * bobj,
   return 0;
 }
 
+/* Which insulation neighbor of the root does \a q belong to? */
 static int
 p4est_root_insul (p4est_quadrant_t * q)
 {
@@ -394,6 +396,8 @@ p4est_tree_ghost_neighborhood_add (p4est_t * p4est, int from_tree, int insul,
                                 &la, proc_hash, procs);
 }
 
+/* loop over the insuation neighbors of \a q , looking for neighboring
+ * processes */
 static void
 p4est_tree_ghost_neighborhood_insert (p4est_t * p4est, p4est_topidx_t t,
                                       p4est_topidx_t flt, p4est_topidx_t llt,
@@ -471,6 +475,9 @@ p4est_tree_ghost_neighborhood_insert (p4est_t * p4est, p4est_topidx_t t,
   }
 }
 
+/* Compute the ghost neighbors of the process (ignoring neighbors who are only
+ * neighbors that are "close" to the start / end of this process's range,
+ * i.e. within the minlevel ancestor of first_desc / last_desc */
 static void
 p4est_tree_ghost_neighborhood (p4est_balance_obj_t * bobj, p4est_t * p4est,
                                p4est_topidx_t t, p4est_topidx_t flt,
@@ -506,6 +513,9 @@ p4est_tree_ghost_neighborhood (p4est_balance_obj_t * bobj, p4est_t * p4est,
                                           proc_hash, sortquad, procs);
     return;
   }
+  /* loop over the implicit coarsest tree for this process's range,
+   * inserting ghost neighbors based on the insulation layer neighbors of the
+   * quads in the loop */
   fid = p4est_quadrant_ancestor_id (&f, alevel + 1);
   lid = p4est_quadrant_ancestor_id (&l, alevel + 1);
   P4EST_ASSERT (lid > fid);
@@ -1616,6 +1626,102 @@ p4est_balance_sort_merge_seeds (p4est_balance_obj_t * bobj,
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
+static int8_t
+p4est_process_level (p4est_t *p4est, int p)
+{
+  p4est_quadrant_t f, f_mid, l_mid, l;
+  p4est_quadrant_t af, al, afl, alf, aff, all;
+  int8_t ancestor_level, f_level, l_level;
+  P4EST_ASSERT (!p4est_comm_is_empty(p4est, p));
+
+  P4EST_QUADRANT_INIT(&f_mid);
+  P4EST_QUADRANT_INIT(&l_mid);
+
+  f = p4est->global_first_position[p];
+  l = p4est->global_first_position[p+1];
+  if (l.x == 0 && l.y == 0 &&
+#ifdef P4_TO_P8
+      l.z == 0 &&
+#endif
+      1) {
+    l.p.which_tree--;
+    l.x = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN(P4EST_QMAXLEVEL);
+    l.y = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN(P4EST_QMAXLEVEL);
+#ifdef P4_TO_P8
+    l.z = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN(P4EST_QMAXLEVEL);
+#endif
+  } else {
+    uint64_t id;
+
+    id = p4est_quadrant_linear_id (&l, P4EST_QMAXLEVEL);
+    p4est_quadrant_set_morton (&l, P4EST_QMAXLEVEL, id - 1);
+  }
+  P4EST_ASSERT (p4est_quadrant_compare_piggy (&f, &l) <= 0);
+  if (l.p.which_tree > f.p.which_tree + 1) {
+    /* the range contains a root */
+    return 0;
+  }
+  if (l.p.which_tree == f.p.which_tree + 1) {
+    ancestor_level = -1;
+    f_mid.x = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN(P4EST_QMAXLEVEL);
+    f_mid.y = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN(P4EST_QMAXLEVEL);
+#ifdef P4_TO_P8
+    f_mid.z = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN(P4EST_QMAXLEVEL);
+#endif
+    f_mid.level = P4EST_QMAXLEVEL;
+    l_mid.x = 0;
+    l_mid.y = 0;
+#ifdef P4_TO_P8
+    l_mid.z = 0;
+#endif
+    l_mid.level = P4EST_QMAXLEVEL;
+  }
+  else {
+    int8_t f_id, l_id;
+    p4est_quadrant_t a;
+
+    p4est_nearest_common_ancestor (&f, &l, &a);
+    ancestor_level = a.level;
+
+    p4est_quadrant_corner_descendant (&a, &af, 0, P4EST_QMAXLEVEL);
+    p4est_quadrant_corner_descendant (&a, &al, P4EST_CHILDREN - 1, P4EST_QMAXLEVEL);
+    if (p4est_quadrant_is_equal (&f, &af) &&
+        p4est_quadrant_is_equal (&l, &al)) {
+      /* the range is equivalent to the least common ancestor */
+      return ancestor_level;
+    }
+
+    f_id = p4est_quadrant_ancestor_id (&f, ancestor_level + 1);
+    l_id = p4est_quadrant_ancestor_id (&l, ancestor_level + 1);
+    if (l_id > f_id + 1) {
+      /* a full child of the ancestor is present in the range */
+      return ancestor_level + 1;
+    }
+  }
+  p4est_quadrant_ancestor (&f, ancestor_level + 1, &af);
+  p4est_quadrant_corner_descendant (&af, &afl, P4EST_CHILDREN - 1, P4EST_QMAXLEVEL);
+  p4est_nearest_common_ancestor(&f, &afl, &af);
+  p4est_quadrant_corner_descendant (&af, &aff, 0, P4EST_QMAXLEVEL);
+  if (p4est_quadrant_is_equal (&f, &aff)) {
+    f_level = af.level;
+  }
+  else {
+    f_level = af.level + 1;
+  }
+
+  p4est_quadrant_ancestor (&l, ancestor_level + 1, &al);
+  p4est_quadrant_corner_descendant (&al, &alf, 0, P4EST_QMAXLEVEL);
+  p4est_nearest_common_ancestor(&alf, &l, &al);
+  p4est_quadrant_corner_descendant (&al, &all, P4EST_CHILDREN - 1, P4EST_QMAXLEVEL);
+  if (p4est_quadrant_is_equal (&l, &all)) {
+    l_level = al.level;
+  }
+  else {
+    l_level = al.level + 1;
+  }
+  return SC_MIN(l_level, f_level);
+}
+
 static void
 p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                           p4est_t * p4est, int flt, int llt, int num_trees,
@@ -1628,9 +1734,12 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
   sc_flopinfo_t       snap;
   size_t              nneigh = procs->elem_count;
   int                 rank = p4est->mpirank;
+  int                 tdeg = bobj->neighbor_tree;
 
   P4EST_BAL_FUNC_SNAP (bobj, &snap);
   /* ghost neighbor balance */
+  /* loop over trees: transform non-root quads into their rooted version in
+   * neighbor trees */
   for (t = 0; t < num_trees; t++) {
     int                 i, j, k, l;
 #ifdef P4_TO_P8
@@ -1756,6 +1865,51 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     sc_array_reset (&tform_quads);
   }
   /* exchange, merge and complete */
+  if (tdeg > 0) {
+    /* Gather statistics about the "sizes" of neighboring processes */
+    size_t n;
+    int nneigh_larger = 0;
+    int nneigh_same = 0;
+    int nneigh_smaller = 0;
+
+    int8_t my_level = p4est_process_level (p4est, rank);
+
+    if (stats) {
+      if (!sc_statistics_has (stats, "balance neigh larger")) {
+        sc_statistics_add_empty (stats, "balance neigh larger");
+      }
+      if (!sc_statistics_has (stats, "balance neigh same")) {
+        sc_statistics_add_empty (stats, "balance neigh same");
+      }
+      if (!sc_statistics_has (stats, "balance neigh smaller")) {
+        sc_statistics_add_empty (stats, "balance neigh smaller");
+      }
+    }
+
+    for (n = 0; n < nneigh; n++) {
+      int                 p = *((int *) sc_array_index (procs, n));
+      int8_t              this_level = p4est_process_level(p4est, p);
+
+      if (p == rank) {
+        continue;
+      }
+
+      if (this_level < my_level) {
+        nneigh_larger++;
+      }
+      else if (this_level == my_level) {
+        nneigh_same++;
+      }
+      else {
+        nneigh_smaller++;
+      }
+    }
+    if (stats) {
+      sc_statistics_accumulate (stats, "balance neigh larger", (double) nneigh_larger);
+      sc_statistics_accumulate (stats, "balance neigh same", (double) nneigh_same);
+      sc_statistics_accumulate (stats, "balance neigh smaller", (double) nneigh_smaller);
+    }
+  }
   if (num_trees) {
 #ifdef P4EST_ENABLE_MPI
     size_t              n;

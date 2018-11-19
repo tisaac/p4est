@@ -105,6 +105,9 @@ sc_notify_t        *p8est_balance_obj_get_notify (p8est_balance_obj_t * bobj);
 void                p8est_balance_obj_sort_set_use_root (p8est_balance_obj_t *
                                                          bobj, int use_root);
 
+void                p8est_balance_obj_sort_set_neigh_tree_degree (p8est_balance_obj_t *
+                                                                  bobj, int degree);
+
 void                p8est_balance_obj_set_adapt_flags (p8est_balance_obj_t *
                                                        bobj,
                                                        const int8_t *

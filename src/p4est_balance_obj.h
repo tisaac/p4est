@@ -229,6 +229,10 @@ sc_notify_t        *p4est_balance_obj_get_notify (p4est_balance_obj_t * bobj);
  */
 void                p4est_balance_obj_sort_set_use_root (p4est_balance_obj_t *
                                                          bobj, int use_root);
+
+void                p4est_balance_obj_sort_set_neigh_tree_degree (p4est_balance_obj_t *
+                                                                  bobj, int degree);
+
 /** Balance function that takes p4est and balance object as inputs.
  * \ It will perform fusion balancing operations based on methods
  * \ stored in balance object.

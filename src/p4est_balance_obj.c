@@ -192,6 +192,13 @@ p4est_balance_obj_sort_set_use_root (p4est_balance_obj_t * bobj, int use_root)
   bobj->use_root = use_root;
 }
 
+void
+p4est_balance_obj_sort_set_neigh_tree_degree (p4est_balance_obj_t * bobj, int degree)
+{
+  P4EST_ASSERT (degree >= 0);
+  bobj->neighbor_tree = degree;
+}
+
 extern void         p4est_balance_sort (p4est_balance_obj_t * bobj,
                                         p4est_t * p4est);
 extern void         p4est_balance_tworound (p4est_balance_obj_t * bobj,
