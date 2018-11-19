@@ -2153,7 +2153,26 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
            (p4est_quadrant_t *) sc_array_push_count (recv_buf, ne->p.info.count);
         memcpy (q, sc_array_index (buf, 1), ne->p.info.count * sizeof (p4est_quadrant_t));
         if (offset == buf->elem_count) {
+          neigh_entry_t * ne;
+          size_t count, bufsize;
           /* if there are no more leaves, send neigh_buf[root] back */
+          sc_array_t * up_buf = &neigh_bufs[proc_hash[root_proc]];
+
+          count = up_buf->elem_count;
+          ne = (neigh_entry_t *) sc_array_push (up_buf);
+          ne->p.info.root_proc = root_proc;
+          ne->p.info.leaf_proc = rank;
+          ne->p.info.count = count;
+          bufsize = (count + 1) * sizeof (neigh_entry_t);
+          mpiret = MPI_Isend (sc_array_index (up_buf, 0), bufsize, MPI_BYTE, p,
+                              P4EST_COMM_BALANCE_SORT_NEIGH_UP, p4est->mpicomm,
+                              &send_gather_req[buf_index]);
+          SC_CHECK_MPI (mpiret);
+          if (stats) {
+            sc_statistics_accumulate (stats, "balance neigh send",
+                                      (double) (bufsize /
+                                                sizeof (p4est_quadrant_t)));
+          }
         }
         else {
           /* else, use offsets in the bcast receive buffer as send buffers
@@ -2181,6 +2200,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
             int q = -1;
             size_t count, bufsize;
 
+            count = 0;
             for (iq = 0; iq < qend - qstart; iq++) {
               int q;
               neigh_entry_t *newne;
@@ -2190,21 +2210,23 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
               if (!iq) {
                 q = newne->p.info.leaf_proc;
               }
-              new_offset += newne->p.info.count;
-
-              count = newne->p.info.count;
-
-              new_offset += 1 + newne->p.info.count;
+              count += 1 + newne->p.info.count;
               P4EST_ASSERT (new_offset <= buf->elem_count);
             }
-            bufsize = (new_offset - offset) * sizeof (neigh_entry_t);
+            bufsize = count * sizeof (neigh_entry_t);
             if (qend > qstart) {
               mpiret = MPI_Isend (sc_array_index (buf, new_offset), bufsize, MPI_BYTE, q,
                                   P4EST_COMM_BALANCE_SORT_NEIGH_DOWN, p4est->mpicomm,
-                                  &send_bcast_req[b]);
+                                  &send_bcast_req[tdeg * (1 + buf_index)]);
               SC_CHECK_MPI (mpiret);
               ngather_to_recv++;
+              if (stats) {
+                sc_statistics_accumulate (stats, "balance neigh send",
+                                          (double) (bufsize /
+                                                    sizeof (p4est_quadrant_t)));
+              }
             }
+            new_offset += count;
           }
         }
       }
