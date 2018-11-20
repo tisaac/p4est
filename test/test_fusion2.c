@@ -479,7 +479,7 @@ main (int argc, char **argv)
   const char         *out_base_name = NULL;
   const char         *conn_string = NULL;
   const char         *notify_name;
-  const char         *balance_name;
+  const char         *balance_name = NULL;
   int                 ntop, nint, nbot;
   int                 balance_sort_root = 0;
   int                 balance_sort_tdeg = 0;
