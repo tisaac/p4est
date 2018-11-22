@@ -1745,6 +1745,12 @@ typedef struct neigh_entry
 }
 neigh_entry_t;
 
+/* we will use tags to keep the multiple tree communications separate */
+enum
+{
+  P4EST_COMM_BALANCE_SORT_NEIGH_TREE = P4EST_COMM_TAG_LAST;
+}
+
 static void
 p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                           p4est_t * p4est, int flt, int llt, int num_trees,
@@ -1760,7 +1766,6 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
   int                 tdeg = bobj->neighbor_tree;
   int                *proc_type;
   int                *proc_smaller;
-  int                *proc_rep;
   int                 nneigh_larger = 0;
   int                 nneigh_same = 0;
   int                 nneigh_smaller = 0;
@@ -1898,10 +1903,6 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
   }
 
   proc_type = P4EST_ALLOC_ZERO (int, nneigh);
-  proc_rep = P4EST_ALLOC_ZERO (int, nneigh);
-  for (nz = 0; nz < nneigh; nz++) {
-    proc_rep[nz] = nz;
-  }
   proc_smaller = P4EST_ALLOC (int, nneigh);
   if (tdeg > 0) {
     /* Gather statistics about the "sizes" of neighboring processes */
@@ -1987,30 +1988,25 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
   else {
     nneigh_same = nneigh;
   }
-  if (tdeg > 0) {
-    /* pack bufs going out to smaller procs */
-    int b;
-
-    for (b = 0; b < tdeg; b++) {
-    }
-  }
   /* exchange, merge and complete */
   if (num_trees) {
 #ifdef P4EST_ENABLE_MPI
     size_t              n, ns;
     MPI_Request        *send_req, *recv_req;
     MPI_Request        *send_same_req, *recv_same_req,
-                       *send_bcast_req, *recv_bcast_req,
-                       *send_gather_req, *recv_gather_req;
+                       *send_scat_req, *recv_scat_req,
+                       *send_gath_req, *recv_gath_req;
     sc_array_t         *recv_buf = NULL;
-    sc_array_t         *bcast_bufs;
-    sc_array_t         *gather_bufs;
+    sc_array_t         *scat_bufs;
+    sc_array_t         *gath_bufs;
     int                 nreq;
     int                 me = proc_hash[rank];
     int                 mpiret;
     int                 nsame_to_recv = 0;
-    int                 nbcast_to_recv = 0;
-    int                 ngather_to_recv = 0;
+    int                 nscat_to_recv = 0;
+    int                 ngath_to_recv = 0;
+    int                 total_scat = 0;
+    neigh_info_t       *scat = NULL;
 
     P4EST_ASSERT (me > 0 && me <= nneigh);
 
@@ -2022,21 +2018,24 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     recv_req = &send_req[nreq];
 
     send_same_req = send_req;
-    send_bcast_req = &send_same_req[nneigh];
-    send_gather_req = &send_bcast_req[tdeg * (1 + nneigh_larger)];
+    send_scat_req = &send_same_req[nneigh];
+    send_gath_req = &send_scat_req[tdeg * (1 + nneigh_larger)];
 
     recv_same_req = recv_req;
-    recv_bcast_req = &recv_same_req[nneigh];
-    recv_gather_req = &recv_bcast_req[1 + nneigh_larger];
+    recv_scat_req = &recv_same_req[nneigh];
+    recv_gath_req = &recv_scat_req[1 + nneigh_larger];
 
     for (n = 0; n < nreq; n++) {
       send_req[n] = MPI_REQUEST_NULL;
       recv_req[n] = MPI_REQUEST_NULL;
     }
 
-    bcast_bufs = SC_ALLOC (sc_array_t, 2 * (nneigh_larger + 1));
-    gather_bufs = &bcast_bufs[nneigh_larger + 1];
+    scat_bufs = SC_ALLOC (sc_array_t, 2 * (nneigh_larger + 1));
+    gath_bufs = &scat_bufs[nneigh_larger + 1];
 
+    scat = SC_ALLOC (neigh_info_t, tdeg * (1 + nneigh_larger));
+
+    /* Direct point-to-point with equals */
     recv_buf = &neigh_bufs[me - 1];
     for (n = 0; n < nneigh; n++) {
       int                 p = *((int *) sc_array_index (procs, n));
@@ -2061,6 +2060,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
       }
 
     }
+    /* Scatter for larger-to-smaller */
     if (tdeg > 0) {
       int b;
 
@@ -2078,17 +2078,21 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
         bufsize = sbuf->elem_size * sbuf->elem_count;
         mpiret = MPI_Isend (sbuf->array, bufsize, MPI_BYTE, dest,
                             P4EST_COMM_BALANCE_SORT_NEIGH_DOWN, p4est->mpicomm,
-                            &send_bcast_req[b]);
+                            &send_scat_req[b]);
         SC_CHECK_MPI (mpiret);
-        ngather_to_recv++;
+        scat[total_scat].root_proc = rank;
+        scat[total_scat].leaf_proc = dest;
+        scat[total_scat].count = rank;
+        total_scat++;
+        ngath_to_recv++;
         if (stats) {
           sc_statistics_accumulate (stats, "balance neigh send",
                                     (double) sbuf->elem_count);
         }
       }
-      nbcast_to_recv = nneigh_larger;
+      nscat_to_recv = nneigh_larger;
     }
-    while (nsame_to_recv > 0 || ngather_to_recv > 0 || nbcast_to_recv > 0) {
+    while (nsame_to_recv > 0 || ngath_to_recv > 0 || nscat_to_recv > 0) {
       MPI_Status          status;
       int                 rcount;
       int                 p;
@@ -2100,6 +2104,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                     status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_DOWN ||
                     status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_UP);
       if (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH) {
+        P4EST_ASSERT (nsame_to_recv > 0);
         p = status.MPI_SOURCE;
         P4EST_ASSERT (proc_hash[p] > 0);
         mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
@@ -2120,18 +2125,19 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
         nsame_to_recv--;
       }
       if (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_DOWN) {
-        int buf_index = --nbcast_to_recv;
-        sc_array_t *buf = &bcast_bufs[buf_index];
+        int buf_index = --nscat_to_recv;
+        sc_array_t *buf = &scat_bufs[buf_index];
         neigh_entry_t *ne;
         int root_proc;
         size_t offset;
 
+        P4EST_ASSERT (nscat_to_recv >= 0);
         p = status.MPI_SOURCE;
         mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
         P4EST_ASSERT ((rcount % sizeof (neigh_entry_t)) == 0);
-        /* allocate space for bcast reception */
+        /* allocate space for scat reception */
         sc_array_init_size (buf, sizeof (neigh_entry_t), rcount / sizeof (neigh_entry_t));
-        /* parse received bcast: push self quads onto recv_buf */
+        /* parse received scat: push self quads onto recv_buf */
         mpiret = MPI_Recv(buf->array, rcount, MPI_BYTE, p,
                           P4EST_COMM_BALANCE_SORT_NEIGH_DOWN,
                           p4est->mpicomm, MPI_STATUS_IGNORE);
@@ -2145,7 +2151,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
         ne = (neigh_entry_t *) sc_array_index (buf, 0);
         root_proc = ne->p.info.root_proc;
         P4EST_ASSERT (ne->p.info.leaf_proc == rank);
-        P4EST_ASSERT (proc_hash[root_proc] >= 0);
+        P4EST_ASSERT (proc_hash[root_proc] > 0);
         offset = 1;
         offset += ne->p.info.count;
         P4EST_ASSERT (offset <= buf->elem_count);
@@ -2156,7 +2162,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
           neigh_entry_t * ne;
           size_t count, bufsize;
           /* if there are no more leaves, send neigh_buf[root] back */
-          sc_array_t * up_buf = &neigh_bufs[proc_hash[root_proc]];
+          sc_array_t * up_buf = &neigh_bufs[proc_hash[root_proc] - 1];
 
           count = up_buf->elem_count;
           ne = (neigh_entry_t *) sc_array_push (up_buf);
@@ -2166,7 +2172,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
           bufsize = (count + 1) * sizeof (neigh_entry_t);
           mpiret = MPI_Isend (sc_array_index (up_buf, 0), bufsize, MPI_BYTE, p,
                               P4EST_COMM_BALANCE_SORT_NEIGH_UP, p4est->mpicomm,
-                              &send_gather_req[buf_index]);
+                              &send_gath_req[buf_index]);
           SC_CHECK_MPI (mpiret);
           if (stats) {
             sc_statistics_accumulate (stats, "balance neigh send",
@@ -2175,8 +2181,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
           }
         }
         else {
-          /* else, use offsets in the bcast receive buffer as send buffers
-           * to continue the bcast tree and add to the gathers to receive */
+          /* else, use offsets in the scat receive buffer as send buffers
+           * to continue the scat tree and add to the gaths to receive */
           int b;
           int nresend = 0;
           size_t new_offset = offset;
@@ -2202,7 +2208,6 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
 
             count = 0;
             for (iq = 0; iq < qend - qstart; iq++) {
-              int q;
               neigh_entry_t *newne;
 
               newne = (neigh_entry_t *) sc_array_index (buf, new_offset);
@@ -2217,9 +2222,13 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
             if (qend > qstart) {
               mpiret = MPI_Isend (sc_array_index (buf, new_offset), bufsize, MPI_BYTE, q,
                                   P4EST_COMM_BALANCE_SORT_NEIGH_DOWN, p4est->mpicomm,
-                                  &send_bcast_req[tdeg * (1 + buf_index)]);
+                                  &send_scat_req[tdeg * (1 + buf_index)]);
               SC_CHECK_MPI (mpiret);
-              ngather_to_recv++;
+              scat[total_scat].root_proc = root_proc;
+              scat[total_scat].leaf_proc = q;
+              scat[total_scat].count = p;
+              total_scat++;
+              ngath_to_recv++;
               if (stats) {
                 sc_statistics_accumulate (stats, "balance neigh send",
                                           (double) (bufsize /
@@ -2230,37 +2239,55 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
           }
         }
       }
-    }
-    for (n = 0; n < nneigh - 1; n++) {
-      MPI_Status          status;
-      int                 rcount;
-      int                 p;
-      p4est_quadrant_t   *q;
+      if (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_UP) {
+        int buf_index = -1;
+        sc_array_t *buf = NULL;
+        neigh_entry_t *ne;
+        int s, root_proc = -1;
+        int root_complete = 1;
+        int branch = -1;
+        size_t offset;
 
-      mpiret = MPI_Probe (MPI_ANY_SOURCE, P4EST_COMM_BALANCE_SORT_NEIGH,
-                          p4est->mpicomm, &status);
-      SC_CHECK_MPI (mpiret);
-      p = status.MPI_SOURCE;
-      P4EST_ASSERT (proc_hash[p] > 0);
-      mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
-      P4EST_ASSERT ((rcount % sizeof (p4est_quadrant_t)) == 0);
-      q =
-        (p4est_quadrant_t *) sc_array_push_count (recv_buf,
-                                                  rcount /
-                                                  sizeof (p4est_quadrant_t));
-      mpiret =
-        MPI_Recv (q, rcount, MPI_BYTE, p, P4EST_COMM_BALANCE_SORT_NEIGH,
-                  p4est->mpicomm, MPI_STATUS_IGNORE);
-      SC_CHECK_MPI (mpiret);
-      if (stats) {
-        sc_statistics_accumulate (stats, "balance neigh recv",
-                                  (double) (rcount /
-                                            sizeof (p4est_quadrant_t)));
+        P4EST_ASSERT (ngath_to_recv >= 0);
+        p = status.MPI_SOURCE;
+        for (s = 0; s < total_scat; s++) {
+          if (scat[s].leaf_prof == p) {
+            root_proc = scats[s].root_proc;
+            scat[s].leaf_proc = -1;
+            branch = (int) scat[s].count;
+            break;
+          }
+        }
+        P4EST_ASSERT (root_proc >= 0 && proc_hash[root_proc] > 0);
+        buf = &neigh_bufs[proc_hash[root_proc] - 1];
+        mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
+        P4EST_ASSERT ((rcount % sizeof (neigh_entry_t)) == 0);
+        ne = sc_array_push_count (buf, rcount / sizeof (neigh_entry_t));
+        /* parse received scat: push self quads onto recv_buf */
+        mpiret = MPI_Recv(ne, rcount, MPI_BYTE, p,
+                          P4EST_COMM_BALANCE_SORT_NEIGH_UP,
+                          p4est->mpicomm, MPI_STATUS_IGNORE);
+        SC_CHECK_MPI (mpiret);
+        if (stats) {
+          sc_statistics_accumulate (stats, "balance neigh recv",
+                                    (double) (rcount /
+                                              sizeof (p4est_quadrant_t)));
+        }
+        for (s = 0; s < total_scat; s++) {
+          if (scat[s].root_proc == root_proc &&
+              scat[s].leaf_proc >= 0) {
+            root_complete = 0;
+            break;
+          }
+        }
+        if (root_complete) {
+        }
+        ngath_to_recv--;
       }
     }
     mpiret = MPI_Waitall ((int) nreq, send_req, MPI_STATUSES_IGNORE);
     SC_CHECK_MPI (mpiret);
-    P4EST_FREE (bcast_bufs);
+    P4EST_FREE (scat_bufs);
     P4EST_FREE (send_req);
 #endif
 
@@ -2321,8 +2348,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     }
     P4EST_FREE (smaller_bufs);
   }
+  P4EST_FREE (scat);
   P4EST_FREE (proc_smaller);
-  P4EST_FREE (proc_rep);
   P4EST_FREE (proc_type);
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
