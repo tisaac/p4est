@@ -17,6 +17,7 @@ libp4est_installed_headers += \
         src/p4est_iterate.h src/p4est_lnodes.h src/p4est_mesh.h \
         src/p4est_balance_obj.h src/p4est_balance_seeds.h src/p4est_io.h \
         src/p4est_wrap.h src/p4est_plex.h \
+        src/p4est_neigh.h \
         src/p4est_fused.h
 libp4est_compiled_sources += \
         src/p4est_connectivity.c src/p4est.c \
@@ -29,6 +30,7 @@ libp4est_compiled_sources += \
         src/p4est_balance_sort.c src/p4est_io.c \
         src/p4est_connrefine.c \
         src/p4est_wrap.c src/p4est_plex.c \
+        src/p4est_neigh.c \
         src/p4est_fused.c
 endif
 if P4EST_ENABLE_BUILD_3D
@@ -42,6 +44,7 @@ libp4est_installed_headers += \
         src/p8est_iterate.h src/p8est_lnodes.h src/p8est_mesh.h \
         src/p8est_tets_hexes.h src/p8est_balance_obj.h src/p8est_balance_seeds.h src/p8est_io.h \
         src/p8est_wrap.h src/p8est_plex.h \
+        src/p8est_neigh.h \
         src/p8est_fused.h
 libp4est_compiled_sources += \
         src/p8est_connectivity.c src/p8est.c \
@@ -54,6 +57,7 @@ libp4est_compiled_sources += \
         src/p8est_balance_obj.c src/p8est_balance_sort.c src/p8est_balance_tworound.c \
         src/p8est_connrefine.c \
         src/p8est_wrap.c src/p8est_plex.c \
+        src/p8est_neigh.c \
         src/p8est_fused.c
 endif
 if P4EST_ENABLE_BUILD_2D

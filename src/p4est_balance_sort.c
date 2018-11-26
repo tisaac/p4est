@@ -1748,8 +1748,8 @@ neigh_entry_t;
 /* we will use tags to keep the multiple tree communications separate */
 enum
 {
-  P4EST_COMM_BALANCE_SORT_NEIGH_TREE = P4EST_COMM_TAG_LAST;
-}
+  P4EST_COMM_BALANCE_SORT_NEIGH_TREE = P4EST_COMM_TAG_LAST,
+};
 
 static void
 p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
@@ -2251,8 +2251,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
         P4EST_ASSERT (ngath_to_recv >= 0);
         p = status.MPI_SOURCE;
         for (s = 0; s < total_scat; s++) {
-          if (scat[s].leaf_prof == p) {
-            root_proc = scats[s].root_proc;
+          if (scat[s].leaf_proc == p) {
+            root_proc = scat[s].root_proc;
             scat[s].leaf_proc = -1;
             branch = (int) scat[s].count;
             break;
@@ -2348,7 +2348,6 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     }
     P4EST_FREE (smaller_bufs);
   }
-  P4EST_FREE (scat);
   P4EST_FREE (proc_smaller);
   P4EST_FREE (proc_type);
   P4EST_BAL_FUNC_SHOT (bobj, &snap);

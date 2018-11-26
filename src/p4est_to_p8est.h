@@ -507,4 +507,15 @@
 #define p4est_adapt_fused               p8est_adapt_fused
 #define p4est_adapt_fused_reference     p8est_adapt_fused_reference
 
+/* functions and data structures in p4est_neigh */
+#define p4est_neigh_s p8est_neigh_s
+#define p4est_neigh_t p8est_neigh_t
+#define p4est_neigh_new p8est_neigh_new
+#define p4est_neigh_destroy p8est_neigh_destroy
+#define p4est_neigh_get_procs p8est_neigh_get_procs
+#define p4est_neigh_allgather p8est_neigh_allgather
+#define p4est_neigh_allgatherv p8est_neigh_allgatherv
+#define p4est_neigh_alltoall p8est_neigh_alltoall
+#define p4est_neigh_alltoallv p8est_neigh_alltoallv
+
 #endif /* !P4EST_TO_P8EST_H */
