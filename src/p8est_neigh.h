@@ -66,7 +66,6 @@ void p8est_neigh_allgather (p8est_neigh_t *neigh,
 
 void p8est_neigh_allgatherv (p8est_neigh_t *neigh,
                              sc_array_t *send_array,
-                             sc_array_t *send_offsets,
                              sc_array_t *recv_buf,
                              sc_array_t *recv_offsets);
 
