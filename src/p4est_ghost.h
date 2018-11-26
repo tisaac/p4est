@@ -33,6 +33,7 @@
 #define P4EST_GHOST_H
 
 #include <p4est.h>
+#include <p4est_neigh.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -75,6 +76,8 @@ typedef struct
   p4est_locidx_t     *mirror_proc_front_offsets;        /**< NULL until
                                                            p4est_ghost_expand is
                                                            called */
+  p4est_neigh_t      *neigh;                    /**< object that handle communication schedule
+                                                     for ghost communication */
 }
 p4est_ghost_t;
 
