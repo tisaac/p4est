@@ -43,13 +43,13 @@ SC_EXTERN_C_BEGIN;
  * a forest.
  *
  */
-
-enum
+typedef enum
 {
   P4EST_FUSED_KEEP = 0,
   P4EST_FUSED_REFINE,
   P4EST_FUSED_COARSEN
-};
+}
+p4est_adapt_flag_t;
 
 /** This is a fused adaptation loop equivalent to the following code:
  *
