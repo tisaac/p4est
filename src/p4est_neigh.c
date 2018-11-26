@@ -84,6 +84,7 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
   p4est_neigh_t *neigh;
 
   neigh = P4EST_ALLOC_ZERO (p4est_neigh_t, 1);
+  neigh->method = P4EST_NEIGH_BASIC;
 
   P4EST_ASSERT (n_neigh >= 0);
 
@@ -92,8 +93,13 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
   P4EST_ASSERT (n_neigh == 0 || neigh_procs[0] == 0);
 #endif
 
-  mpiret = sc_MPI_Comm_dup (p4est->mpicomm, &(neigh->comm));
-  SC_CHECK_MPI (mpiret);
+  if (neigh->method == P4EST_NEIGH_MPI) {
+    /* TODO: create distributed graph MPI_Dist_graph_create_adjacent */
+  }
+  else {
+    mpiret = sc_MPI_Comm_dup (p4est->mpicomm, &(neigh->comm));
+    SC_CHECK_MPI (mpiret);
+  }
   mpiret = sc_MPI_Comm_size (neigh->comm, &(neigh->size));
   SC_CHECK_MPI (mpiret);
   mpiret = sc_MPI_Comm_rank (neigh->comm, &(neigh->rank));
@@ -137,7 +143,6 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
       neigh->neigh_procs_sorted = neigh->neigh_procs;
     }
   }
-  neigh->method = P4EST_NEIGH_BASIC;
 
 #if defined(P4EST_ENABLE_DEBUG)
   {
