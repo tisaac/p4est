@@ -205,6 +205,8 @@ p4est_neigh_get_procs (p4est_neigh_t *neigh,
   }
 }
 
+/* == BASIC == */
+
 static void
 p4est_neigh_all_basic_begin (p4est_neigh_t *neigh,
                              sc_array_t *send_array,
@@ -271,80 +273,16 @@ p4est_neigh_all_basic_end (p4est_neigh_t *neigh,
   *neigh_req_p = NULL;
 }
 
-void
-p4est_neigh_allgather (p4est_neigh_t *neigh,
+static void
+p4est_neigh_all_basic (p4est_neigh_t *neigh,
                        sc_array_t *send_array,
                        sc_array_t *recv_array,
-                       int ordered)
+                       int ordered, int alltoall)
 {
   p4est_neigh_req_t *req;
 
-  p4est_neigh_iallgather_begin (neigh, send_array, recv_array, ordered, &req);
-  p4est_neigh_iallgather_end (neigh, send_array, recv_array, ordered, &req);
-}
-
-void
-p4est_neigh_iallgather_begin (p4est_neigh_t *neigh,
-                              sc_array_t *send_array,
-                              sc_array_t *recv_array,
-                              int ordered,
-                              p4est_neigh_req_t **req)
-{
-  sc_array_t send_array_view, recv_array_view;
-  size_t total_size;
-
-  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
-  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh * send_array->elem_count);
-
-  total_size = send_array->elem_size * send_array->elem_count;
-  if (!total_size) {
-    return;
-  }
-
-  if (send_array->elem_count > 1) {
-    sc_array_init_data (&send_array_view, send_array->array, send_array->elem_size * send_array->elem_count, 1);
-    sc_array_init_data (&recv_array_view, recv_array->array, send_array->elem_size * send_array->elem_count, neigh->n_neigh);
-    send_array = &send_array_view;
-    recv_array = &recv_array_view;
-  }
-
-  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
-  P4EST_ASSERT (send_array->elem_count == 1);
-  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh);
-
-  p4est_neigh_all_basic_begin (neigh, send_array, recv_array, ordered, 0, req);
-}
-
-void
-p4est_neigh_iallgather_end (p4est_neigh_t *neigh,
-                            sc_array_t *send_array,
-                            sc_array_t *recv_array,
-                            int ordered,
-                            p4est_neigh_req_t **req)
-{
-  sc_array_t send_array_view, recv_array_view;
-  size_t total_size;
-
-  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
-  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh * send_array->elem_count);
-
-  total_size = send_array->elem_size * send_array->elem_count;
-  if (!total_size) {
-    return;
-  }
-
-  if (send_array->elem_count > 1) {
-    sc_array_init_data (&send_array_view, send_array->array, send_array->elem_size * send_array->elem_count, 1);
-    sc_array_init_data (&recv_array_view, recv_array->array, send_array->elem_size * send_array->elem_count, neigh->n_neigh);
-    send_array = &send_array_view;
-    recv_array = &recv_array_view;
-  }
-
-  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
-  P4EST_ASSERT (send_array->elem_count == 1);
-  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh);
-
-  p4est_neigh_all_basic_end (neigh, send_array, recv_array, ordered, 0, req);
+  p4est_neigh_all_basic_begin (neigh, send_array, recv_array, ordered, alltoall, &req);
+  p4est_neigh_all_basic_end (neigh, send_array, recv_array, ordered, alltoall, &req);
 }
 
 #if defined(P4EST_ENABLE_MPIMPROBE)
@@ -561,7 +499,9 @@ p4est_neigh_allv_basic_mprobe_end (p4est_neigh_t *neigh,
   P4EST_FREE (neigh_req);
   *neigh_req_p = NULL;
 }
+
 #else
+
 static void
 p4est_neigh_allv_basic_counts_begin (p4est_neigh_t *neigh,
                                      sc_array_t *send_array,
@@ -858,16 +798,147 @@ p4est_neigh_allx_basic_end (p4est_neigh_t *neigh,
   p4est_neigh_allv_basic_end (neigh, NULL, NULL, NULL, NULL, 1, req);
 }
 
+static void
+p4est_neigh_allv_basic (p4est_neigh_t *neigh,
+                        sc_array_t *send_array,
+                        sc_array_t *send_offsets,
+                        sc_array_t *recv_array,
+                        sc_array_t *recv_offsets,
+                        int alltoall)
+{
+  p4est_neigh_req_t *req;
+
+  p4est_neigh_allv_basic_begin (neigh, send_array, send_offsets, recv_array, recv_offsets, alltoall, &req);
+  p4est_neigh_allv_basic_end (neigh, send_array, send_offsets, recv_array, recv_offsets, alltoall, &req);
+}
+
+static void
+p4est_neigh_allx_basic (p4est_neigh_t *neigh,
+                        sc_array_t **send_arrays,
+                        sc_array_t *recv_array,
+                        sc_array_t *recv_offsets)
+{
+  p4est_neigh_req_t *req;
+
+  p4est_neigh_allx_basic_begin (neigh, send_arrays, recv_array, recv_offsets, &req);
+  p4est_neigh_allx_basic_end (neigh, send_arrays, recv_array, recv_offsets, &req);
+}
+
+
+/* == INTERFACE == */
+
+void
+p4est_neigh_allgather (p4est_neigh_t *neigh,
+                       sc_array_t *send_array,
+                       sc_array_t *recv_array,
+                       int ordered)
+{
+  sc_array_t send_array_view, recv_array_view;
+  size_t total_size;
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh * send_array->elem_count);
+
+  total_size = send_array->elem_size * send_array->elem_count;
+  if (!total_size) {
+    return;
+  }
+
+  if (send_array->elem_count > 1) {
+    sc_array_init_data (&send_array_view, send_array->array, send_array->elem_size * send_array->elem_count, 1);
+    sc_array_init_data (&recv_array_view, recv_array->array, send_array->elem_size * send_array->elem_count, neigh->n_neigh);
+    send_array = &send_array_view;
+    recv_array = &recv_array_view;
+  }
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (send_array->elem_count == 1);
+  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh);
+
+  p4est_neigh_all_basic (neigh, send_array, recv_array, ordered, 0);
+}
+
+void
+p4est_neigh_iallgather_begin (p4est_neigh_t *neigh,
+                              sc_array_t *send_array,
+                              sc_array_t *recv_array,
+                              int ordered,
+                              p4est_neigh_req_t **req)
+{
+  sc_array_t send_array_view, recv_array_view;
+  size_t total_size;
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh * send_array->elem_count);
+
+  total_size = send_array->elem_size * send_array->elem_count;
+  if (!total_size) {
+    return;
+  }
+
+  if (send_array->elem_count > 1) {
+    sc_array_init_data (&send_array_view, send_array->array, send_array->elem_size * send_array->elem_count, 1);
+    sc_array_init_data (&recv_array_view, recv_array->array, send_array->elem_size * send_array->elem_count, neigh->n_neigh);
+    send_array = &send_array_view;
+    recv_array = &recv_array_view;
+  }
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (send_array->elem_count == 1);
+  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh);
+
+  p4est_neigh_all_basic_begin (neigh, send_array, recv_array, ordered, 0, req);
+}
+
+void
+p4est_neigh_iallgather_end (p4est_neigh_t *neigh,
+                            sc_array_t *send_array,
+                            sc_array_t *recv_array,
+                            int ordered,
+                            p4est_neigh_req_t **req)
+{
+  sc_array_t send_array_view, recv_array_view;
+  size_t total_size;
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh * send_array->elem_count);
+
+  total_size = send_array->elem_size * send_array->elem_count;
+  if (!total_size) {
+    return;
+  }
+
+  if (send_array->elem_count > 1) {
+    sc_array_init_data (&send_array_view, send_array->array, send_array->elem_size * send_array->elem_count, 1);
+    sc_array_init_data (&recv_array_view, recv_array->array, send_array->elem_size * send_array->elem_count, neigh->n_neigh);
+    send_array = &send_array_view;
+    recv_array = &recv_array_view;
+  }
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (send_array->elem_count == 1);
+  P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh);
+
+  p4est_neigh_all_basic_end (neigh, send_array, recv_array, ordered, 0, req);
+}
+
+
 void
 p4est_neigh_allgatherv (p4est_neigh_t *neigh,
                         sc_array_t *send_array,
                         sc_array_t *recv_array,
                         sc_array_t *recv_offsets)
 {
-  p4est_neigh_req_t *req;
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
+  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_size == sizeof(size_t));
+  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_count == neigh->n_neigh + 1);
 
-  p4est_neigh_iallgatherv_begin (neigh, send_array, recv_array, recv_offsets, &req);
-  p4est_neigh_iallgatherv_end (neigh, send_array, recv_array, recv_offsets, &req);
+  if (!send_array->elem_size) {
+    return;
+  }
+
+  p4est_neigh_allv_basic (neigh, send_array, NULL, recv_array, recv_offsets, 0);
 }
 
 void
@@ -914,10 +985,30 @@ p4est_neigh_alltoall (p4est_neigh_t *neigh,
                       sc_array_t *recv_array,
                       int ordered)
 {
-  p4est_neigh_req_t *req;
+  sc_array_t send_array_view, recv_array_view;
 
-  p4est_neigh_ialltoall_begin (neigh, send_array, recv_array, ordered, &req);
-  p4est_neigh_ialltoall_end (neigh, send_array, recv_array, ordered, &req);
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (recv_array->elem_count == send_array->elem_count);
+  P4EST_ASSERT (neigh->n_neigh == 0 || send_array->elem_count % neigh->n_neigh == 0);
+
+  if (!send_array->elem_size) {
+    return;
+  }
+
+  if (send_array->elem_count > neigh->n_neigh) {
+    size_t mult = send_array->elem_count / neigh->n_neigh;
+
+    sc_array_init_data (&send_array_view, send_array->array, send_array->elem_size * mult, neigh->n_neigh);
+    sc_array_init_data (&recv_array_view, recv_array->array, send_array->elem_size * mult, neigh->n_neigh);
+    send_array = &send_array_view;
+    recv_array = &recv_array_view;
+  }
+
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (recv_array->elem_count == send_array->elem_count);
+  P4EST_ASSERT (send_array->elem_count == neigh->n_neigh);
+
+  p4est_neigh_all_basic (neigh, send_array, recv_array, ordered, 1);
 }
 
 void
@@ -993,10 +1084,17 @@ p4est_neigh_alltoallv (p4est_neigh_t *neigh,
                        sc_array_t *recv_array,
                        sc_array_t *recv_offsets)
 {
-  p4est_neigh_req_t *req;
+  P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
+  P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
+  P4EST_ASSERT (send_offsets->elem_size == sizeof (size_t));
+  P4EST_ASSERT (send_offsets->elem_count == neigh->n_neigh + 1);
+  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_count == neigh->n_neigh + 1);
 
-  p4est_neigh_ialltoallv_begin (neigh, send_array, send_offsets, recv_array, recv_offsets, &req);
-  p4est_neigh_ialltoallv_end (neigh, send_array, send_offsets, recv_array, recv_offsets, &req);
+  if (!send_array->elem_size) {
+    return;
+  }
+
+  p4est_neigh_allv_basic (neigh, send_array, send_offsets, recv_array, recv_offsets, 1);
 }
 
 void
@@ -1047,10 +1145,21 @@ p4est_neigh_alltoallx (p4est_neigh_t *neigh,
                        sc_array_t *recv_array,
                        sc_array_t *recv_offsets)
 {
-  p4est_neigh_req_t *req;
+#if defined(P4EST_ENABLE_DEBUG)
+  int i;
 
-  p4est_neigh_ialltoallx_begin (neigh, send_arrays, recv_array, recv_offsets, &req);
-  p4est_neigh_ialltoallx_end (neigh, send_arrays, recv_array, recv_offsets, &req);
+  for (i = 0; i < neigh->n_neigh; i++) {
+    P4EST_ASSERT (send_arrays[i]->elem_size == recv_array->elem_size);
+  }
+#endif
+  P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
+  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_count == neigh->n_neigh + 1);
+
+  if (!recv_array->elem_size) {
+    return;
+  }
+
+  p4est_neigh_allx_basic (neigh, send_arrays, recv_array, recv_offsets);
 }
 
 void
