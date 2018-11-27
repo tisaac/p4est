@@ -195,7 +195,7 @@ main (int argc, char **argv)
   p4est_destroy (p4est);
   p4est_connectivity_destroy (connectivity);
 
-  sc_finalize ();
+  //sc_finalize ();
 
   mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);

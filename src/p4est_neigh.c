@@ -544,7 +544,7 @@ p4est_neigh_alltoall (p4est_neigh_t *neigh,
 
   P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
   P4EST_ASSERT (recv_array->elem_count == send_array->elem_count);
-  P4EST_ASSERT (send_array->elem_count % neigh->n_neigh == 0);
+  P4EST_ASSERT (neigh->n_neigh == 0 || send_array->elem_count % neigh->n_neigh == 0);
 
   if (!send_array->elem_size) {
     return;
