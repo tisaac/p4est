@@ -36,6 +36,8 @@
  * implementations of neighborhoods */
 typedef struct p8est_neigh_s p8est_neigh_t;
 
+typedef struct p8est_neigh_req_s p8est_neigh_req_t;
+
 /** Create a neighborhood. The communicator from the p8est will be duplicated so
  * that the neighborhood can manage its own tags without conflict.  The reason
  * that a p8est is passed instead of just a communicator is that the
@@ -64,15 +66,51 @@ void p8est_neigh_allgather (p8est_neigh_t *neigh,
                             sc_array_t *recv_array,
                             int ordered);
 
+void p8est_neigh_iallgather_begin (p8est_neigh_t *neigh,
+                                   sc_array_t *send_array,
+                                   sc_array_t *recv_array,
+                                   int ordered,
+                                   p8est_neigh_req_t **req);
+
+void p8est_neigh_iallgather_end (p8est_neigh_t *neigh,
+                                 sc_array_t *send_array,
+                                 sc_array_t *recv_array,
+                                 int ordered,
+                                 p8est_neigh_req_t **req);
+
 void p8est_neigh_allgatherv (p8est_neigh_t *neigh,
                              sc_array_t *send_array,
                              sc_array_t *recv_buf,
                              sc_array_t *recv_offsets);
 
+void p8est_neigh_iallgatherv_begin (p8est_neigh_t *neigh,
+                                    sc_array_t *send_array,
+                                    sc_array_t *recv_buf,
+                                    sc_array_t *recv_offsets,
+                                    p8est_neigh_req_t **req);
+
+void p8est_neigh_iallgatherv_end (p8est_neigh_t *neigh,
+                                  sc_array_t *send_array,
+                                  sc_array_t *recv_buf,
+                                  sc_array_t *recv_offsets,
+                                  p8est_neigh_req_t **req);
+
 void p8est_neigh_alltoall (p8est_neigh_t *neigh,
                            sc_array_t *send_array,
                            sc_array_t *recv_array,
                            int ordered);
+
+void p8est_neigh_ialltoall_begin (p8est_neigh_t *neigh,
+                                  sc_array_t *send_array,
+                                  sc_array_t *recv_array,
+                                  int ordered,
+                                  p8est_neigh_req_t **req);
+
+void p8est_neigh_ialltoall_end (p8est_neigh_t *neigh,
+                                sc_array_t *send_array,
+                                sc_array_t *recv_array,
+                                int ordered,
+                                p8est_neigh_req_t **req);
 
 void p8est_neigh_alltoallv (p8est_neigh_t *neigh,
                             sc_array_t *send_array,
@@ -80,7 +118,19 @@ void p8est_neigh_alltoallv (p8est_neigh_t *neigh,
                             sc_array_t *recv_buf,
                             sc_array_t *recv_offsets);
 
+void p8est_neigh_ialltoallv_begin (p8est_neigh_t *neigh,
+                                   sc_array_t *send_array,
+                                   sc_array_t *send_offsets,
+                                   sc_array_t *recv_buf,
+                                   sc_array_t *recv_offsets,
+                                   p8est_neigh_req_t **req);
 
+void p8est_neigh_ialltoallv_end (p8est_neigh_t *neigh,
+                                 sc_array_t *send_array,
+                                 sc_array_t *send_offsets,
+                                 sc_array_t *recv_buf,
+                                 sc_array_t *recv_offsets,
+                                 p8est_neigh_req_t **req);
 
 #endif /* P8EST_NEIGH_H */
 
