@@ -285,12 +285,19 @@ p4est_neigh_all_basic (p4est_neigh_t *neigh,
   p4est_neigh_all_basic_end (neigh, send_array, recv_array, ordered, alltoall, &req);
 }
 
-#if defined(P4EST_ENABLE_MPIMPROBE)
 static void
-p4est_neigh_allv_basic_mprobe_middle (p4est_neigh_t *neigh,
-                                      sc_array_t *recv_array,
-                                      sc_array_t *recv_offsets,
-                                      p4est_neigh_req_t **neigh_req_p);
+p4est_neigh_allv_basic_middle_known (p4est_neigh_t *neigh,
+                                     sc_array_t *recv_array,
+                                     sc_array_t *recv_offsets,
+                                     p4est_neigh_req_t **neigh_req_p);
+
+#if defined(P4EST_ENABLE_MPIMPROBE)
+
+static void
+p4est_neigh_allv_basic_mprobe_middle_unknown (p4est_neigh_t *neigh,
+                                              sc_array_t *recv_array,
+                                              sc_array_t *recv_offsets,
+                                              p4est_neigh_req_t **neigh_req_p);
 
 static void
 p4est_neigh_allv_basic_mprobe_begin (p4est_neigh_t *neigh,
@@ -350,7 +357,12 @@ p4est_neigh_allv_basic_mprobe_begin (p4est_neigh_t *neigh,
     SC_CHECK_MPI (mpiret);
   }
 
-  p4est_neigh_allv_basic_mprobe_middle (neigh, recv_array, recv_offsets, neigh_req_p);
+  if (recv_offsets != NULL && !recv_offsets->elem_count) {
+    p4est_neigh_allv_basic_mprobe_middle_unknown (neigh, recv_array, recv_offsets, neigh_req_p);
+  }
+  else {
+    p4est_neigh_allv_basic_middle_known (neigh, recv_array, recv_offsets, neigh_req_p);
+  }
 }
 
 static void
@@ -398,14 +410,19 @@ p4est_neigh_allx_basic_mprobe_begin (p4est_neigh_t *neigh,
     SC_CHECK_MPI (mpiret);
   }
 
-  p4est_neigh_allv_basic_mprobe_middle (neigh, recv_array, recv_offsets, neigh_req_p);
+  if (recv_offsets != NULL && !recv_offsets->elem_count) {
+    p4est_neigh_allv_basic_mprobe_middle_unknown (neigh, recv_array, recv_offsets, neigh_req_p);
+  }
+  else {
+    p4est_neigh_allv_basic_middle_known (neigh, recv_array, recv_offsets, neigh_req_p);
+  }
 }
 
 static void
-p4est_neigh_allv_basic_mprobe_middle (p4est_neigh_t *neigh,
-                                      sc_array_t *recv_array,
-                                      sc_array_t *recv_offsets,
-                                      p4est_neigh_req_t **neigh_req_p)
+p4est_neigh_allv_basic_mprobe_middle_unknown (p4est_neigh_t *neigh,
+                                              sc_array_t *recv_array,
+                                              sc_array_t *recv_offsets,
+                                              p4est_neigh_req_t **neigh_req_p)
 {
   sc_MPI_Comm comm = neigh->comm;
   int n_neigh = neigh->n_neigh;
@@ -426,7 +443,7 @@ p4est_neigh_allv_basic_mprobe_middle (p4est_neigh_t *neigh,
   reqs = (sc_MPI_Request *) sc_array_index (neigh_req->reqs, 0);
   msgs = (p4est_neigh_msg_t *) sc_array_index (neigh_req->msgs, 0);
 
-  offsets = recv_offsets ? (size_t *) sc_array_index (recv_offsets, 0) : NULL;
+  offsets = recv_offsets ? (size_t *) sc_array_push_count (recv_offsets, n_neigh + 1) : NULL;
   /* get sizes with mprobe */
   for (nq = 0, recv_count = 0; nq < n_neigh; nq++) {
     MPI_Status status;
@@ -743,6 +760,41 @@ p4est_neigh_allv_basic_counts_end (p4est_neigh_t *neigh,
 #endif
 
 static void
+p4est_neigh_allv_basic_middle_known (p4est_neigh_t *neigh,
+                                     sc_array_t *recv_array,
+                                     sc_array_t *recv_offsets,
+                                     p4est_neigh_req_t **neigh_req_p)
+{
+  MPI_Comm comm = neigh->comm;
+  int n_neigh = neigh->n_neigh, nq;
+  const int *neigh_procs = neigh->neigh_procs;
+  char *recv_buf = recv_array->array;
+  size_t *roffsets = (size_t *) sc_array_index (recv_offsets, 0);
+  size_t elem_size = recv_array->elem_size;
+  sc_MPI_Request *reqs = NULL;
+  p4est_neigh_req_t *neigh_req = *neigh_req_p;
+
+  reqs = (sc_MPI_Request *) sc_array_index (neigh_req->reqs, 0);
+
+  for (nq = 0; nq < n_neigh; nq++) {
+    size_t offstart = roffsets[nq];
+    size_t offend = roffsets[nq+1];
+    int count = (offend - offstart) * elem_size;
+    char *buf = &recv_buf[offstart * elem_size];
+    int mpiret;
+
+    mpiret = sc_MPI_Irecv (buf,
+                           count,
+                           sc_MPI_BYTE,
+                           neigh_procs[nq],
+                           P4EST_NEIGH_BASIC_ALLV,
+                           comm,
+                           &reqs[2 * nq + 1]);
+    SC_CHECK_MPI (mpiret);
+  }
+}
+
+static void
 p4est_neigh_allv_basic_begin (p4est_neigh_t *neigh,
                               sc_array_t *send_array,
                               sc_array_t *send_offsets,
@@ -842,11 +894,14 @@ p4est_neigh_allgather_setup (p4est_neigh_t *neigh,
   P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
   P4EST_ASSERT (recv_array->elem_count == neigh->n_neigh * send_array->elem_count);
 
+  /* element count should be the same on each process, so
+   * exiting with zero count will be done by each process. */
   total_size = send_array->elem_size * send_array->elem_count;
   if (!total_size) {
     return 1;
   }
 
+  /* reshape the arrays so that they have one element per send */
   if (send_array->elem_count > 1) {
     sc_array_init_data (send_array_view, send_array->array, send_array->elem_size * send_array->elem_count, 1);
     sc_array_init_data (recv_array_view, recv_array->array, send_array->elem_size * send_array->elem_count, neigh->n_neigh);
@@ -920,6 +975,50 @@ p4est_neigh_iallgather_end (p4est_neigh_t *neigh,
   p4est_neigh_all_basic_end (neigh, send_array, recv_array, ordered, 0, req);
 }
 
+static void
+p4est_neigh_recv_array_offsets_check (p4est_neigh_t *neigh,
+                                      sc_array_t *recv_array,
+                                      sc_array_t *recv_offsets)
+{
+  if (recv_offsets == NULL) {
+    /* the user does not know what the incoming sizes are (they will be
+     * appended to recv_array), and does not care about the order in which
+     * they will be appended */
+    P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
+  }
+  else {
+    size_t elem_count;
+
+    /* the array should contain size_t's */
+    P4EST_ASSERT (recv_offsets->elem_size == sizeof (size_t));
+
+    elem_count = recv_offsets->elem_count;
+    P4EST_ASSERT (elem_count == 0 || elem_count == neigh->n_neigh + 1);
+    if (!elem_count) {
+      /* the user does not know what the incoming sizes are (they will be
+       * appended to recv_array), but does care about the order in which
+       * they will be appended */
+      P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_offsets));
+      P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
+    }
+    else {
+#if defined(P4EST_ENABLE_DEBUG)
+      int nq;
+      /* the user does know what the incoming sizes are,
+       * and has provided offsets for them into the array */
+
+      for (nq = 0; nq < neigh->n_neigh; nq++) {
+        size_t offstart = *((size_t *) sc_array_index (recv_offsets, nq));
+        size_t offend = *((size_t *) sc_array_index (recv_offsets, nq+1));
+
+        P4EST_ASSERT (offend >= offstart);
+        P4EST_ASSERT (offend <= recv_array->elem_count);
+      }
+#endif
+    }
+  }
+}
+
 /* != 0: early exit */
 static int
 p4est_neigh_allgatherv_setup (p4est_neigh_t *neigh,
@@ -928,9 +1027,7 @@ p4est_neigh_allgatherv_setup (p4est_neigh_t *neigh,
                               sc_array_t *recv_offsets)
 {
   P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
-  P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
-  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_size == sizeof(size_t));
-  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_count == neigh->n_neigh + 1);
+  p4est_neigh_recv_array_offsets_check (neigh, recv_array, recv_offsets);
 
   if (!send_array->elem_size) {
     return 1;
@@ -1006,10 +1103,13 @@ p4est_neigh_alltoall_setup (p4est_neigh_t *neigh,
   P4EST_ASSERT (recv_array->elem_count == send_array->elem_count);
   P4EST_ASSERT (neigh->n_neigh == 0 || send_array->elem_count % neigh->n_neigh == 0);
 
+  /* The element size should be the same on each process: if it is zero here,
+   * it is zero on all processes, there is no communication necessary */
   if (!send_array->elem_size) {
     return 1;
   }
 
+  /* Resize the arrays so that there is one outgoing message for each neighbor */
   if (send_array->elem_count > neigh->n_neigh) {
     size_t mult = send_array->elem_count / neigh->n_neigh;
 
@@ -1091,10 +1191,9 @@ p4est_neigh_alltoallv_setup (p4est_neigh_t *neigh,
                              sc_array_t *recv_offsets)
 {
   P4EST_ASSERT (send_array->elem_size == recv_array->elem_size);
-  P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
   P4EST_ASSERT (send_offsets->elem_size == sizeof (size_t));
   P4EST_ASSERT (send_offsets->elem_count == neigh->n_neigh + 1);
-  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_count == neigh->n_neigh + 1);
+  p4est_neigh_recv_array_offsets_check (neigh, recv_array, recv_offsets);
 
   if (!send_array->elem_size) {
     return 1;
@@ -1177,8 +1276,7 @@ p4est_neigh_alltoallx_setup (p4est_neigh_t *neigh,
     P4EST_ASSERT (send_arrays[i]->elem_size == recv_array->elem_size);
   }
 #endif
-  P4EST_ASSERT (SC_ARRAY_IS_OWNER (recv_array));
-  P4EST_ASSERT (recv_offsets == NULL || recv_offsets->elem_count == neigh->n_neigh + 1);
+  p4est_neigh_recv_array_offsets_check (neigh, recv_array, recv_offsets);
 
   if (!recv_array->elem_size) {
     return 1;

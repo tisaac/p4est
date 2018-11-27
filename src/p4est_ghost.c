@@ -2034,6 +2034,7 @@ failtest:
   gl->neigh = neigh;
 
   recv_offsets = sc_array_new_count (sizeof (size_t), num_peers + 1);
+  sc_array_truncate (recv_offsets);
 
   p4est_neigh_ialltoallx_begin (neigh, peer_send_bufs, ghost_layer, recv_offsets, &req);
 
