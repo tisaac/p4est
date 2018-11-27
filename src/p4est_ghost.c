@@ -2322,13 +2322,17 @@ p4est_ghost_exchange_custom_begin (p4est_t * p4est, p4est_ghost_t * ghost,
                                    void **mirror_data, void *ghost_data)
 {
   const int           num_procs = p4est->mpisize;
-  int                 mpiret;
-  int                 q;
-  char               *mem, **sbuf;
-  p4est_locidx_t      ng_excl, ng_incl, ng, theg;
+  int                 nq, q;
+  int                 n_neigh;
+  const int          *neigh_procs = NULL;
+  char               *mem;
+  sc_array_t         *send_array, *recv_array;
+  sc_array_t         *send_offsets, *recv_offsets;
+  size_t             *roffsets, *soffsets;
   p4est_locidx_t      mirr;
   p4est_ghost_exchange_t *exc;
-  sc_MPI_Request     *r;
+  p4est_neigh_t      *neigh = ghost->neigh;
+  p4est_neigh_req_t  *req;
 
   /* initialize transient storage */
   exc = P4EST_ALLOC_ZERO (p4est_ghost_exchange_t, 1);
@@ -2339,54 +2343,57 @@ p4est_ghost_exchange_custom_begin (p4est_t * p4est, p4est_ghost_t * ghost,
   exc->maxlevel = P4EST_QMAXLEVEL;
   exc->data_size = data_size;
   exc->ghost_data = ghost_data;
-  sc_array_init (&exc->requests, sizeof (sc_MPI_Request));
-  sc_array_init (&exc->sbuffers, sizeof (char *));
 
   /* return early if there is nothing to do */
   if (data_size == 0) {
     return exc;
   }
 
-  /* receive data from other processors */
-  ng_excl = 0;
-  for (q = 0; q < num_procs; ++q) {
-    ng_incl = ghost->proc_offsets[q + 1];
-    ng = ng_incl - ng_excl;
-    P4EST_ASSERT (ng >= 0);
-    if (ng > 0) {
-      r = (sc_MPI_Request *) sc_array_push (&exc->requests);
-      mpiret = sc_MPI_Irecv ((char *) ghost_data + ng_excl * data_size,
-                             ng * data_size, sc_MPI_BYTE, q,
-                             P4EST_COMM_GHOST_EXCHANGE, p4est->mpicomm, r);
-      SC_CHECK_MPI (mpiret);
-      ng_excl = ng_incl;
-    }
+  p4est_neigh_get_procs (neigh, &n_neigh, &neigh_procs);
+
+  sc_array_init_data (&exc->recv_array, ghost_data, data_size, ghost->ghosts.elem_count);
+  recv_array = &exc->recv_array;
+  sc_array_init_size (&exc->recv_offsets, sizeof (size_t), n_neigh + 1);
+  recv_offsets = &exc->recv_offsets;
+  roffsets = (size_t *) sc_array_index (recv_offsets, 0);
+  for (nq = 0; nq < n_neigh; nq++) {
+    q = neigh_procs[nq];
+    roffsets[nq] = (size_t) ghost->proc_offsets[q];
   }
-  P4EST_ASSERT (ng_excl == (p4est_locidx_t) ghost->ghosts.elem_count);
+  roffsets[n_neigh] = (size_t) ghost->proc_offsets[num_procs];
+
+  sc_array_init_size (&exc->send_array, data_size, ghost->mirror_proc_offsets[num_procs]);
+  send_array = &exc->send_array;
+  sc_array_init_size (&exc->send_offsets, sizeof (size_t), n_neigh + 1);
+  send_offsets = &exc->send_offsets;
+  soffsets = (size_t *) sc_array_index (send_offsets, 0);
 
   /* send data to other processors */
-  ng_excl = 0;
-  for (q = 0; q < num_procs; ++q) {
-    ng_incl = ghost->mirror_proc_offsets[q + 1];
-    ng = ng_incl - ng_excl;
-    P4EST_ASSERT (ng >= 0);
-    if (ng > 0) {
+  for (nq = 0; nq < n_neigh; nq++) {
+    size_t offstart, offend, count, s;
+    q = neigh_procs[nq];
+
+    offstart = ghost->mirror_proc_offsets[q];
+    offend = ghost->mirror_proc_offsets[q+1];
+    P4EST_ASSERT (offend >= offstart);
+    count = offend - offstart;
+    soffsets[nq] = offstart;
+    if (count > 0) {
       /* every peer populates its own send buffer */
-      sbuf = (char **) sc_array_push (&exc->sbuffers);
-      mem = *sbuf = P4EST_ALLOC (char, ng * data_size);
-      for (theg = 0; theg < ng; ++theg) {
-        mirr = ghost->mirror_proc_mirrors[ng_excl + theg];
+      mem = (char *) sc_array_index (send_array, offstart);
+      for (s = offstart; s < offend; s++) {
+        mirr = ghost->mirror_proc_mirrors[s];
         P4EST_ASSERT (0 <= mirr && (size_t) mirr < ghost->mirrors.elem_count);
         memcpy (mem, mirror_data[mirr], data_size);
         mem += data_size;
       }
-      r = (sc_MPI_Request *) sc_array_push (&exc->requests);
-      mpiret = sc_MPI_Isend (*sbuf, ng * data_size, sc_MPI_BYTE, q,
-                             P4EST_COMM_GHOST_EXCHANGE, p4est->mpicomm, r);
-      SC_CHECK_MPI (mpiret);
-      ng_excl = ng_incl;
     }
   }
+  soffsets[n_neigh] = ghost->mirror_proc_offsets[num_procs];
+
+  p4est_neigh_ialltoallv_begin (neigh, send_array, send_offsets,
+                                recv_array, recv_offsets, &req);
+  exc->req = req;
 
   /* we are done posting the messages */
   return exc;
@@ -2395,9 +2402,7 @@ p4est_ghost_exchange_custom_begin (p4est_t * p4est, p4est_ghost_t * ghost,
 void
 p4est_ghost_exchange_custom_end (p4est_ghost_exchange_t * exc)
 {
-  int                 mpiret;
-  size_t              zz;
-  char              **sbuf;
+  p4est_neigh_req_t  *req;
 
   /* don't confuse this function with p4est_ghost_exchange_data_end */
   P4EST_ASSERT (exc->is_custom);
@@ -2405,16 +2410,17 @@ p4est_ghost_exchange_custom_end (p4est_ghost_exchange_t * exc)
   /* don't confuse it with p4est_ghost_exchange_custom_levels_end either */
   P4EST_ASSERT (!exc->is_levels);
 
-  /* wait for messages to complete and clean up */
-  mpiret = sc_MPI_Waitall (exc->requests.elem_count, (sc_MPI_Request *)
-                           exc->requests.array, sc_MPI_STATUSES_IGNORE);
-  SC_CHECK_MPI (mpiret);
-  sc_array_reset (&exc->requests);
-  for (zz = 0; zz < exc->sbuffers.elem_count; ++zz) {
-    sbuf = (char **) sc_array_index (&exc->sbuffers, zz);
-    P4EST_FREE (*sbuf);
-  }
-  sc_array_reset (&exc->sbuffers);
+  req = exc->req;
+
+  p4est_neigh_ialltoallv_end (exc->ghost->neigh,
+                              &exc->send_array, &exc->send_offsets,
+                              &exc->recv_array, &exc->recv_offsets,
+                              &req);
+
+  sc_array_reset (&exc->send_array);
+  sc_array_reset (&exc->send_offsets);
+  sc_array_reset (&exc->recv_array);
+  sc_array_reset (&exc->recv_offsets);
 
   /* free the store */
   P4EST_FREE (exc);

@@ -266,6 +266,9 @@ typedef struct p8est_ghost_exchange
   int                *qactive, *qbuffer;
   sc_array_t          requests, sbuffers;
   sc_array_t          rrequests, rbuffers;
+  sc_array_t          send_array, send_offsets;
+  sc_array_t          recv_array, recv_offsets;
+  p8est_neigh_req_t  *req;
 }
 p8est_ghost_exchange_t;
 
