@@ -33,6 +33,7 @@
 #define P8EST_GHOST_H
 
 #include <p8est.h>
+#include <p8est_neigh.h>
 
 SC_EXTERN_C_BEGIN;
 
@@ -74,6 +75,7 @@ typedef struct
   p4est_locidx_t     *mirror_proc_front_offsets;        /**< NULL until
                                                            p4est_ghost_expand is
                                                            called */
+  p8est_neigh_t      *neigh;
 }
 p8est_ghost_t;
 

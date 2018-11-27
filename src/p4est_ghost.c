@@ -29,12 +29,14 @@
 #include <p4est_search.h>
 #include <p4est_lnodes.h>
 #include <p4est_algorithms.h>
+#include <p4est_neigh.h>
 #else
 /* bits and communication are included in p8est_ghost.c */
 #include <p8est_ghost.h>
 #include <p8est_search.h>
 #include <p8est_lnodes.h>
 #include <p8est_algorithms.h>
+#include <p8est_neigh.h>
 #endif
 #include <sc_search.h>
 
@@ -1481,6 +1483,7 @@ p4est_ghost_new_check (p4est_t * p4est, p4est_connect_type_t btype,
   sc_array_t         *ghost_layer;
   p4est_topidx_t      nt;
   p4est_ghost_t      *gl;
+  p4est_neigh_t      *neigh = NULL;
   sc_flopinfo_t       snap;
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING "_ghost_new %s\n",
@@ -1512,6 +1515,7 @@ p4est_ghost_new_check (p4est_t * p4est, p4est_connect_type_t btype,
   gl->proc_offsets[1] = 0;
   gl->mirror_proc_offsets[1] = 0;
 #else
+  gl->neigh = NULL;
 #ifdef P4_TO_P8
   eta = &ei.edge_transforms;
 #endif
@@ -2013,6 +2017,24 @@ failtest:
       ++num_peers;
   }
 
+  {
+    int *peers = P4EST_ALLOC (int, num_peers);
+    int j;
+
+    for (i = 0, j = 0; i < num_procs; i++) {
+      buf = p4est_ghost_array_index (&send_bufs, i);
+      if (buf->elem_count > 0) {
+        peers[j++] = i;
+      }
+    }
+
+    neigh = p4est_neigh_new (p4est, num_peers, peers);
+
+    gl->neigh = neigh;
+
+    P4EST_FREE (peers);
+  }
+
   recv_request = P4EST_ALLOC (MPI_Request, 2 * num_peers);
   send_request = P4EST_ALLOC (MPI_Request, 2 * num_peers);
 
@@ -2223,6 +2245,10 @@ p4est_ghost_destroy (p4est_ghost_t * ghost)
   sc_array_reset (&ghost->ghosts);
   P4EST_FREE (ghost->tree_offsets);
   P4EST_FREE (ghost->proc_offsets);
+
+  if (ghost->neigh) {
+    p4est_neigh_destroy (ghost->neigh);
+  }
 
   if (ghost->mirror_proc_fronts != ghost->mirror_proc_mirrors) {
     P4EST_ASSERT (ghost->mirror_proc_front_offsets !=

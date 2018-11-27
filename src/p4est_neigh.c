@@ -107,7 +107,7 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
 
   neigh->n_neigh = n_neigh;
   neigh->neigh_procs = P4EST_ALLOC (int, n_neigh);
-  memcpy (neigh->neigh_procs, neigh_procs, n_neigh);
+  memcpy (neigh->neigh_procs, neigh_procs, n_neigh * sizeof(int));
 
   {
     sc_array_t neigh_array;
@@ -152,7 +152,7 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
     neigh_out = P4EST_ALLOC(int, neigh->size);
 
     for (nq = 0; nq < neigh->n_neigh; nq++) {
-      neigh_in[nq] = 1;
+      neigh_in[neigh->neigh_procs[nq]] = 1;
     }
 
     mpiret = sc_MPI_Alltoall (neigh_in, 1, MPI_INT, neigh_out, 1, MPI_INT,
@@ -162,6 +162,8 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
     diff = memcmp (neigh_in, neigh_out, neigh->n_neigh * sizeof(int));
 
     P4EST_ASSERT (!diff);
+    P4EST_FREE (neigh_in);
+    P4EST_FREE (neigh_out);
   }
 #endif
 
