@@ -31,7 +31,7 @@
  * communication.  A p4est_neigh_t can be used to do some of the
  * MPI_Neighborhood_* operations (in the future, maybe all of them).  Ideally,
  * MPI implementations of MPI Neighborhood collectives will be flexible in
- * their algorithms that \a p4est_neigh_t becomes redundant.  But as of this
+ * their algorithms so that #p4est_neigh_t becomes redundant.  But as of this
  * writing in 2018, popular MPI implementations only have loop-over-neighbors
  * implementations of neighborhoods */
 typedef struct p4est_neigh_s p4est_neigh_t;
@@ -58,6 +58,7 @@ p4est_neigh_t *p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_pr
 /** Destroy a neighborhood. */
 void p4est_neigh_destroy (p4est_neigh_t *neigh);
 
+/** Get the list of processes, in the order they were given */
 void p4est_neigh_get_procs (p4est_neigh_t *neigh, int *n_neigh,
                             const int **neigh_procs);
 
@@ -78,20 +79,25 @@ void p4est_neigh_iallgather_end (p4est_neigh_t *neigh,
                                  int ordered,
                                  p4est_neigh_req_t **req);
 
+/** recv_offsets should have count 0 (incoming counts are unknown
+ * and must be determined, received loads will be appended to
+ * \a recv_array) or n_neigh + 1 (incoming counts are known,
+ * offsets into \a recv_array) are valid, and will be used.
+ */
 void p4est_neigh_allgatherv (p4est_neigh_t *neigh,
                              sc_array_t *send_array,
-                             sc_array_t *recv_buf,
+                             sc_array_t *recv_array,
                              sc_array_t *recv_offsets);
 
 void p4est_neigh_iallgatherv_begin (p4est_neigh_t *neigh,
                                     sc_array_t *send_array,
-                                    sc_array_t *recv_buf,
+                                    sc_array_t *recv_array,
                                     sc_array_t *recv_offsets,
                                     p4est_neigh_req_t **req);
 
 void p4est_neigh_iallgatherv_end (p4est_neigh_t *neigh,
                                   sc_array_t *send_array,
-                                  sc_array_t *recv_buf,
+                                  sc_array_t *recv_array,
                                   sc_array_t *recv_offsets,
                                   p4est_neigh_req_t **req);
 
@@ -115,37 +121,37 @@ void p4est_neigh_ialltoall_end (p4est_neigh_t *neigh,
 void p4est_neigh_alltoallv (p4est_neigh_t *neigh,
                             sc_array_t *send_array,
                             sc_array_t *send_offsets,
-                            sc_array_t *recv_buf,
+                            sc_array_t *recv_array,
                             sc_array_t *recv_offsets);
 
 void p4est_neigh_ialltoallv_begin (p4est_neigh_t *neigh,
                                    sc_array_t *send_array,
                                    sc_array_t *send_offsets,
-                                   sc_array_t *recv_buf,
+                                   sc_array_t *recv_array,
                                    sc_array_t *recv_offsets,
                                    p4est_neigh_req_t **req);
 
 void p4est_neigh_ialltoallv_end (p4est_neigh_t *neigh,
                                  sc_array_t *send_array,
                                  sc_array_t *send_offsets,
-                                 sc_array_t *recv_buf,
+                                 sc_array_t *recv_array,
                                  sc_array_t *recv_offsets,
                                  p4est_neigh_req_t **req);
 
 void p4est_neigh_alltoallx (p4est_neigh_t *neigh,
                             sc_array_t **send_array,
-                            sc_array_t *recv_buf,
+                            sc_array_t *recv_array,
                             sc_array_t *recv_offsets);
 
 void p4est_neigh_ialltoallx_begin (p4est_neigh_t *neigh,
                                    sc_array_t **send_array,
-                                   sc_array_t *recv_buf,
+                                   sc_array_t *recv_array,
                                    sc_array_t *recv_offsets,
                                    p4est_neigh_req_t **req);
 
 void p4est_neigh_ialltoallx_end (p4est_neigh_t *neigh,
                                  sc_array_t **send_array,
-                                 sc_array_t *recv_buf,
+                                 sc_array_t *recv_array,
                                  sc_array_t *recv_offsets,
                                  p4est_neigh_req_t **req);
 
