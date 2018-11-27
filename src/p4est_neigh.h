@@ -132,5 +132,22 @@ void p4est_neigh_ialltoallv_end (p4est_neigh_t *neigh,
                                  sc_array_t *recv_offsets,
                                  p4est_neigh_req_t **req);
 
+void p4est_neigh_alltoallx (p4est_neigh_t *neigh,
+                            sc_array_t **send_array,
+                            sc_array_t *recv_buf,
+                            sc_array_t *recv_offsets);
+
+void p4est_neigh_ialltoallx_begin (p4est_neigh_t *neigh,
+                                   sc_array_t **send_array,
+                                   sc_array_t *recv_buf,
+                                   sc_array_t *recv_offsets,
+                                   p4est_neigh_req_t **req);
+
+void p4est_neigh_ialltoallx_end (p4est_neigh_t *neigh,
+                                 sc_array_t **send_array,
+                                 sc_array_t *recv_buf,
+                                 sc_array_t *recv_offsets,
+                                 p4est_neigh_req_t **req);
+
 #endif /* P4EST_NEIGH_H */
 

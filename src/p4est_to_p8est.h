@@ -519,6 +519,7 @@
 #define p4est_neigh_allgatherv        p8est_neigh_allgatherv
 #define p4est_neigh_alltoall          p8est_neigh_alltoall
 #define p4est_neigh_alltoallv         p8est_neigh_alltoallv
+#define p4est_neigh_alltoallx         p8est_neigh_alltoallx
 #define p4est_neigh_iallgather_begin  p8est_neigh_iallgather_begin
 #define p4est_neigh_iallgather_end    p8est_neigh_iallgather_end
 #define p4est_neigh_iallgatherv_begin p8est_neigh_iallgatherv_begin
@@ -527,5 +528,7 @@
 #define p4est_neigh_ialltoall_end     p8est_neigh_ialltoall_end
 #define p4est_neigh_ialltoallv_begin  p8est_neigh_ialltoallv_begin
 #define p4est_neigh_ialltoallv_end    p8est_neigh_ialltoallv_end
+#define p4est_neigh_ialltoallx_begin  p8est_neigh_ialltoallx_begin
+#define p4est_neigh_ialltoallx_end    p8est_neigh_ialltoallx_end
 
 #endif /* !P4EST_TO_P8EST_H */
