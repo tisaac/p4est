@@ -1484,7 +1484,10 @@ p4est_ghost_new_check (p4est_t * p4est, p4est_connect_type_t btype,
   p4est_topidx_t      nt;
   p4est_ghost_t      *gl;
   p4est_neigh_t      *neigh = NULL;
+  p4est_neigh_req_t  *req;
   int                *peers;
+  sc_array_t send_counts_array;
+  sc_array_t recv_counts_array;
   sc_flopinfo_t       snap;
 
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING "_ghost_new %s\n",
@@ -2049,17 +2052,14 @@ failtest:
     send_counts[peer] = (p4est_locidx_t) buf->elem_count;
   }
 
-  {
-    sc_array_t send_counts_array;
-    sc_array_t recv_counts_array;
-
-    sc_array_init_data (&send_counts_array, send_counts, sizeof(p4est_locidx_t), (size_t) num_peers);
-    sc_array_init_data (&recv_counts_array, recv_counts, sizeof(p4est_locidx_t), (size_t) num_peers);
-    p4est_neigh_alltoall (neigh, &send_counts_array, &recv_counts_array, 1);
-  }
+  sc_array_init_data (&send_counts_array, send_counts, sizeof(p4est_locidx_t), (size_t) num_peers);
+  sc_array_init_data (&recv_counts_array, recv_counts, sizeof(p4est_locidx_t), (size_t) num_peers);
+  p4est_neigh_ialltoall_begin (neigh, &send_counts_array, &recv_counts_array, 1, &req);
 
   /* The mirrors can be assembled here since they are defined on the sender */
   p4est_ghost_mirror_reset (gl, &m, 1);
+
+  p4est_neigh_ialltoall_end (neigh, &send_counts_array, &recv_counts_array, 1, &req);
 
   /* Count ghosts */
   for (peer = 0, num_ghosts = 0; peer < num_peers; ++peer) {
