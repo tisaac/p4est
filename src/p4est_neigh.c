@@ -436,7 +436,7 @@ p4est_neigh_allx_basic_mprobe_begin (p4est_neigh_t *neigh,
   neigh_req = P4EST_ALLOC (p4est_neigh_req_t, 1);
   *neigh_req_p = neigh_req;
   neigh_req->reqs = sc_array_new_count (sizeof (sc_MPI_Request), (size_t) nreqs);
-  neigh_req->msgs = sc_array_new_count (sizeof (sc_MPI_Request), (size_t) nmsgs);
+  neigh_req->msgs = sc_array_new_count (sizeof (p4est_neigh_msg_t), (size_t) nmsgs);
 
   if (!n_neigh) {
     return;
