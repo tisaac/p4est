@@ -357,7 +357,7 @@ p4est_neigh_allv_basic_mprobe_begin (p4est_neigh_t *neigh,
     SC_CHECK_MPI (mpiret);
   }
 
-  if (recv_offsets != NULL && !recv_offsets->elem_count) {
+  if (recv_offsets == NULL || !recv_offsets->elem_count) {
     p4est_neigh_allv_basic_mprobe_middle_unknown (neigh, recv_array, recv_offsets, neigh_req_p);
   }
   else {
@@ -410,7 +410,7 @@ p4est_neigh_allx_basic_mprobe_begin (p4est_neigh_t *neigh,
     SC_CHECK_MPI (mpiret);
   }
 
-  if (recv_offsets != NULL && !recv_offsets->elem_count) {
+  if (recv_offsets == NULL || !recv_offsets->elem_count) {
     p4est_neigh_allv_basic_mprobe_middle_unknown (neigh, recv_array, recv_offsets, neigh_req_p);
   }
   else {
@@ -479,7 +479,7 @@ p4est_neigh_allv_basic_mprobe_middle_unknown (p4est_neigh_t *neigh,
     int q = (sorted && neigh_perm) ? neigh_perm[nq] : nq;
     p4est_neigh_msg_t *msg = &msgs[q];
 
-    P4EST_ASSERT (msg->source == neigh->neigh_procs[nq]);
+    P4EST_ASSERT (!sorted || msg->source == neigh->neigh_procs[nq]);
     mpiret = MPI_Imrecv (&recv_buf[off * elem_size],
                          msg->count * elem_size, sc_MPI_BYTE, &(msg->msg),
                          &reqs[2 * nq + 1]);
