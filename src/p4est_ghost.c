@@ -3766,11 +3766,17 @@ p4est_ghost_is_valid (p4est_t * p4est, p4est_ghost_t * ghost)
 {
   const p4est_topidx_t num_trees = ghost->num_trees;
   const int           mpisize = ghost->mpisize;
-  int                 i, mpiret, retval;
+  int                 i, retval;
   size_t              view_length, proc_length;
   p4est_locidx_t      proc_offset;
-  sc_array_t          array, *workspace, *requests;
+  p4est_neigh_t      *neigh = ghost->neigh;
+  int                 n_neigh, nq;
+  const int          *neigh_procs;
+  int                 num_peers;
+  int                *peers;
+  sc_array_t          array, *workspace;
   uint64_t           *checksums_recv, *checksums_send;
+  sc_array_t          send_array, recv_array;
 
   /* check if the last entries of the offset arrays are the element count
    * of ghosts/mirrors array. */
@@ -3780,6 +3786,33 @@ p4est_ghost_is_valid (p4est_t * p4est, p4est_ghost_t * ghost)
       ghost->mirrors.elem_count) {
     return 0;
   }
+
+  /* Ensure that the neighborhood is equal to those
+   * processes with ghost quads */
+  p4est_neigh_get_procs (neigh, &n_neigh, &neigh_procs);
+  for (i = 0, num_peers = 0; i < mpisize; i++) {
+    if (ghost->proc_offsets[i] < ghost->proc_offsets[i + 1]) {
+      if (ghost->mirror_proc_offsets[i] >= ghost->mirror_proc_offsets[i + 1]) {
+        /* If I receive a ghost from a neighbor, I must send a ghost to that
+         * neighbor */
+        return 0;
+      }
+      num_peers++;
+    }
+  }
+  peers = P4EST_ALLOC (int, num_peers);
+  for (i = 0, num_peers = 0; i < mpisize; i++) {
+    if (ghost->proc_offsets[i] < ghost->proc_offsets[i + 1]) {
+      peers[num_peers++] = i;
+    }
+  }
+  if (num_peers != n_neigh) {
+    return 0;
+  }
+  if (memcmp (peers, neigh_procs, n_neigh * sizeof(int))) {
+    return 0;
+  }
+  P4EST_FREE (peers);
 
   /* check if quadrants in ghost and mirror layer are
    * in p4est_quadrant_compare_piggy order.
@@ -3835,82 +3868,63 @@ p4est_ghost_is_valid (p4est_t * p4est, p4est_ghost_t * ghost)
   }
 
   /* compare checksums of ghosts with checksums of mirrors */
-  checksums_recv = P4EST_ALLOC (uint64_t, mpisize);
-  checksums_send = P4EST_ALLOC (uint64_t, mpisize);
-  requests = sc_array_new (sizeof (sc_MPI_Request));
+  checksums_recv = P4EST_ALLOC (uint64_t, n_neigh);
+  checksums_send = P4EST_ALLOC (uint64_t, n_neigh);
   workspace = sc_array_new (sizeof (p4est_quadrant_t));
-  for (i = 0; i < mpisize; i++) {
+  for (nq = 0; nq < n_neigh; nq++) {
     p4est_locidx_t      count;
-    sc_MPI_Request     *req;
+    p4est_locidx_t      jl;
 
-    proc_offset = ghost->proc_offsets[i];
-    count = ghost->proc_offsets[i + 1] - proc_offset;
-
-    if (count) {
-      req = (sc_MPI_Request *) sc_array_push (requests);
-      mpiret = sc_MPI_Irecv (&checksums_recv[i], 1, sc_MPI_LONG_LONG_INT, i,
-                             P4EST_COMM_GHOST_CHECKSUM, p4est->mpicomm, req);
-      SC_CHECK_MPI (mpiret);
-    }
-
+    i = neigh_procs[nq];
     proc_offset = ghost->mirror_proc_offsets[i];
     count = ghost->mirror_proc_offsets[i + 1] - proc_offset;
 
-    if (count) {
-      p4est_locidx_t      jl;
 
-      sc_array_truncate (workspace);
+    sc_array_truncate (workspace);
 
-      for (jl = proc_offset; jl < proc_offset + count; jl++) {
-        p4est_locidx_t      idx;
-        p4est_quadrant_t   *q1, *q2;
+    for (jl = proc_offset; jl < proc_offset + count; jl++) {
+      p4est_locidx_t      idx;
+      p4est_quadrant_t   *q1, *q2;
 
-        idx = ghost->mirror_proc_mirrors[jl];
+      idx = ghost->mirror_proc_mirrors[jl];
 
-        q1 = p4est_quadrant_array_index (&ghost->mirrors, (size_t) idx);
-        q2 = p4est_quadrant_array_push (workspace);
-        *q2 = *q1;
-      }
-
-      checksums_send[i] =
-        (uint64_t) p4est_quadrant_checksum (workspace, NULL, 0);
-
-      req = (sc_MPI_Request *) sc_array_push (requests);
-      mpiret = sc_MPI_Isend (&checksums_send[i], 1, sc_MPI_LONG_LONG_INT, i,
-                             P4EST_COMM_GHOST_CHECKSUM, p4est->mpicomm, req);
-      SC_CHECK_MPI (mpiret);
+      q1 = p4est_quadrant_array_index (&ghost->mirrors, (size_t) idx);
+      q2 = p4est_quadrant_array_push (workspace);
+      *q2 = *q1;
     }
-  }
 
-  mpiret = sc_MPI_Waitall (requests->elem_count, (sc_MPI_Request *)
-                           requests->array, sc_MPI_STATUSES_IGNORE);
-  SC_CHECK_MPI (mpiret);
+    checksums_send[nq] =
+                       (uint64_t) p4est_quadrant_checksum (workspace, NULL, 0);
+  }
   sc_array_destroy (workspace);
-  sc_array_destroy (requests);
+  sc_array_init_data (&send_array, checksums_send, sizeof (uint64_t), (size_t) n_neigh);
+  sc_array_init_data (&recv_array, checksums_recv, sizeof (uint64_t), (size_t) n_neigh);
+
+  p4est_neigh_alltoall (neigh, &send_array, &recv_array, 1);
+
   P4EST_FREE (checksums_send);
 
   retval = 1;
-  for (i = 0; i < mpisize; i++) {
+  for (nq = 0; nq < n_neigh; nq++) {
     p4est_locidx_t      count;
+    sc_array_t          view;
+    uint64_t            thiscrc;
 
+    i = neigh_procs[nq];
     proc_offset = ghost->proc_offsets[i];
     count = ghost->proc_offsets[i + 1] - proc_offset;
 
-    if (count) {
-      sc_array_t          view;
-      uint64_t            thiscrc;
 
-      sc_array_init_view (&view, &ghost->ghosts, (size_t) proc_offset,
-                          (size_t) count);
+    sc_array_init_view (&view, &ghost->ghosts, (size_t) proc_offset,
+                        (size_t) count);
 
-      thiscrc = (uint64_t) p4est_quadrant_checksum (&view, NULL, 0);
-      if (thiscrc != checksums_recv[i]) {
-        P4EST_LERRORF ("Ghost layer checksum mismatch: "
-                       "proc %d, my checksum %llu, their checksum %llu\n",
-                       i, (long long unsigned) thiscrc,
-                       (long long unsigned) checksums_recv[i]);
-        retval = 0;
-      }
+    thiscrc = (uint64_t) p4est_quadrant_checksum (&view, NULL, 0);
+    if (thiscrc != checksums_recv[nq]) {
+      P4EST_LERRORF ("Ghost layer checksum mismatch: "
+                     "proc %d, my checksum %llu, their checksum %llu\n",
+                     i, (long long unsigned) thiscrc,
+                     (long long unsigned) checksums_recv[nq]);
+      retval = 0;
     }
   }
   P4EST_FREE (checksums_recv);
