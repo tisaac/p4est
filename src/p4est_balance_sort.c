@@ -1000,7 +1000,7 @@ p4est_balance_sort_compute_neigh (p4est_balance_obj_t * bobj,
   int                *proc_hash;
   sc_array_t         *procs;
 
-  if (bobj->neigh) {
+  if (bobj->neigh && !bobj->use_root) {
     *neigh_p = bobj->neigh;
     return;
   }
