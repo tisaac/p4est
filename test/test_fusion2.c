@@ -636,6 +636,8 @@ main (int argc, char **argv)
 
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
 
+  p4est_balance_obj_sort_set_ghost (bobj, ghost);
+
   sc_stats_init (&stats[FUSION_FULL_LOOP], "Full loop");
   sc_stats_init (&stats[FUSION_TIME_REFINE], "Local refinement");
   sc_stats_init (&stats[FUSION_TIME_COARSEN], "Local coarsening");

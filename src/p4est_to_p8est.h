@@ -463,6 +463,7 @@
 #define p4est_balance_obj_get_adapt_flags p8est_balance_obj_get_adapt_flags
 #define p4est_balance_obj_sort_set_use_root p8est_balance_obj_sort_set_use_root
 #define p4est_balance_obj_sort_set_neigh_tree_degree p8est_balance_obj_sort_set_neigh_tree_degree
+#define p4est_balance_obj_sort_set_ghost p8est_balance_obj_sort_set_ghost
 #define p4est_balance_obj               p8est_balance_obj
 #define P4EST_BALANCE_DEFAULT           P8EST_BALANCE_DEFAULT
 #define P4EST_BALANCE_SORT              P8EST_BALANCE_SORT

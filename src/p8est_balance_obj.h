@@ -108,6 +108,9 @@ void                p8est_balance_obj_sort_set_use_root (p8est_balance_obj_t *
 void                p8est_balance_obj_sort_set_neigh_tree_degree (p8est_balance_obj_t *
                                                                   bobj, int degree);
 
+void                p8est_balance_obj_sort_set_ghost (p8est_balance_obj_t *bobj,
+                                                      p8est_ghost_t *ghost);
+
 void                p8est_balance_obj_set_adapt_flags (p8est_balance_obj_t *
                                                        bobj,
                                                        const int8_t *

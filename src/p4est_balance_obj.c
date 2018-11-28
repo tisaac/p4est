@@ -199,6 +199,13 @@ p4est_balance_obj_sort_set_neigh_tree_degree (p4est_balance_obj_t * bobj, int de
   bobj->neighbor_tree = degree;
 }
 
+void
+p4est_balance_obj_sort_set_ghost (p4est_balance_obj_t *bobj, p4est_ghost_t *ghost)
+{
+  P4EST_ASSERT (ghost->btype == P4EST_CONNECT_FULL);
+  bobj->neigh = ghost->neigh;
+}
+
 extern void         p4est_balance_sort (p4est_balance_obj_t * bobj,
                                         p4est_t * p4est);
 extern void         p4est_balance_tworound (p4est_balance_obj_t * bobj,

@@ -250,6 +250,7 @@ p4est_tree_ghost_neigh_add_r (p4est_t * p4est, p4est_topidx_t from_tree,
   int                 p_fi_stack[64];
   int                 p_la_stack[64];
   int                 stack_pointer = 0;
+  int                 rank = p4est->mpirank;
 
   fi_stack[0] = *fi;
   la_stack[0] = *la;
@@ -284,7 +285,7 @@ p4est_tree_ghost_neigh_add_r (p4est_t * p4est, p4est_topidx_t from_tree,
       int                 p = p_fi_stack[stack_pointer];
       int                 idx = proc_hash[p];
 
-      if (!idx) {
+      if (p != rank && !idx) {
         /* process has not been seen before, add it */
         *((int *) sc_array_push (procs)) = p;
         proc_hash[p] = (int) procs->elem_count;
@@ -792,23 +793,21 @@ p4est_quadrant_array_merge_reduce (sc_array_t * A, sc_array_t * B)
 /* divide up a sorted list of quadrants from a given tree between the
  * neighbor processes */
 static void
-p4est_balance_sort_divide (p4est_t * p4est, sc_array_t * procs,
-                           sc_array_t * proc_bufs, p4est_topidx_t which_tree,
+p4est_balance_sort_divide (p4est_t * p4est, int n_neigh, const int *neigh_procs,
+                           sc_array_t ** send_arrays,
+                           p4est_topidx_t which_tree,
                            sc_array_t * tquads, int skip_self)
 {
-  size_t              n, nneigh = procs->elem_count;
+  int                 neigh;
+  int                 limit = skip_self ? n_neigh : n_neigh + 1;
 
-  for (n = 0; n < nneigh; n++) {
-    int                 p = *((int *) sc_array_index (procs, n));
+  for (neigh = 0; neigh < limit; neigh++) {
+    int                 p = neigh < n_neigh ? neigh_procs[neigh] : p4est->mpirank;
     p4est_quadrant_t    fp, np, lb, ub;
     p4est_quadrant_t   *nq;
     ssize_t             sz;
     size_t              qstart, qend;
     size_t              nbuf, s;
-
-    if (p == p4est->mpirank && skip_self) {
-      continue;
-    }
 
     fp = p4est->global_first_position[p];
     np = p4est->global_first_position[p + 1];
@@ -848,9 +847,11 @@ p4est_balance_sort_divide (p4est_t * p4est, sc_array_t * procs,
     }
     P4EST_ASSERT (qend >= qstart);
     if (qend > qstart) {
-      nbuf = proc_bufs[n].elem_count;
-      sc_array_push_copy (tquads, qstart, qend, &proc_bufs[n]);
-      nq = p4est_quadrant_array_index (&proc_bufs[n], nbuf);
+      sc_array_t *buf = send_arrays[neigh];
+
+      nbuf = buf->elem_count;
+      sc_array_push_copy (tquads, qstart, qend, buf);
+      nq = p4est_quadrant_array_index (buf, nbuf);
       for (s = 0; s < qend - qstart; s++) {
         nq[s].pad8 = 0;
         nq[s].pad16 = 0;
@@ -985,25 +986,31 @@ p4est_balance_sort_compute_pattern_sort (p4est_balance_obj_t * bobj,
 }
 
 static void
-p4est_balance_sort_compute_pattern_neigh (p4est_balance_obj_t * bobj,
-                                          p4est_t * p4est,
-                                          int flt, int llt, int num_trees,
-                                          p4est_tree_neigh_info_t * tinfo,
-                                          int *proc_hash, sc_array_t * procs,
-                                          int *minlevel,
-                                          p4est_quadrant_t * desc)
+p4est_balance_sort_compute_neigh (p4est_balance_obj_t * bobj,
+                                  p4est_t * p4est,
+                                  int flt, int llt, int num_trees,
+                                  p4est_tree_neigh_info_t * tinfo,
+                                  int *minlevel,
+                                  p4est_quadrant_t * desc,
+                                  p4est_neigh_t **neigh_p)
 {
   p4est_topidx_t      t;
   sc_flopinfo_t       snap;
   size_t              s;
-  int                 rank = p4est->mpirank;
+  int                *proc_hash;
+  sc_array_t         *procs;
+
+  if (bobj->neigh) {
+    *neigh_p = bobj->neigh;
+    return;
+  }
 
   P4EST_BAL_FUNC_SNAP (bobj, &snap);
 
-  /* first figure out the parallel neighborhood */
+  procs = sc_array_new_count (sizeof (int), P4EST_INSUL);
   sc_array_truncate (procs);
-  *((int *) sc_array_push (procs)) = rank;
-  proc_hash[rank] = 1;
+  proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
+
   /* block balance local */
   for (t = flt; t <= llt; t++) {
     p4est_tree_neigh_info_t *info;
@@ -1023,23 +1030,10 @@ p4est_balance_sort_compute_pattern_neigh (p4est_balance_obj_t * bobj,
 
     proc_hash[p] = s + 1;
   }
-#ifdef P4EST_ENABLE_DEBUG
-  {
-    int                *proc_hash_T = P4EST_ALLOC (int, p4est->mpisize);
-    int                 mpiret;
-    int                 i;
 
-    mpiret =
-      sc_MPI_Alltoall (proc_hash, 1, sc_MPI_INT, proc_hash_T, 1, sc_MPI_INT,
-                       p4est->mpicomm);
-    SC_CHECK_MPI (mpiret);
-
-    for (i = 0; i < p4est->mpisize; i++) {
-      P4EST_ASSERT (! !proc_hash[i] == ! !proc_hash_T[i]);
-    }
-    P4EST_FREE (proc_hash_T);
-  }
-#endif
+  *neigh_p = p4est_neigh_new (p4est, (int) procs->elem_count, (int *) procs->array);
+  P4EST_FREE (proc_hash);
+  sc_array_destroy (procs);
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
@@ -1754,26 +1748,29 @@ enum
 static void
 p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                           p4est_t * p4est, int flt, int llt, int num_trees,
-                          int *proc_hash, sc_array_t * procs,
                           p4est_tree_neigh_info_t * tinfo,
                           sc_array_t * tree_bufs,
-                          sc_array_t * neigh_bufs, sc_statistics_t * stats)
+                          p4est_neigh_t *neigh,
+                          sc_statistics_t * stats)
 {
   p4est_topidx_t      t;
   sc_flopinfo_t       snap;
-  size_t              nz, nneigh = procs->elem_count;
   int                 rank = p4est->mpirank;
-  int                 tdeg = bobj->neighbor_tree;
-  int                *proc_type;
-  int                *proc_smaller;
-  int                 nneigh_larger = 0;
-  int                 nneigh_same = 0;
-  int                 nneigh_smaller = 0;
-  int                 nbranches = 0;
-  int                 maxbranch = 0;
-  sc_array_t         *smaller_bufs = NULL;
+  int                 n_neigh, nq;
+  const int          *neigh_procs;
+  sc_array_t        **send_arrays;
+  sc_array_t         *recv_array;
 
   P4EST_BAL_FUNC_SNAP (bobj, &snap);
+
+  p4est_neigh_get_procs (neigh, &n_neigh, &neigh_procs);
+
+  send_arrays = P4EST_ALLOC (sc_array_t *,n_neigh + 1);
+  for (nq = 0; nq < n_neigh + 1; nq++) {
+    send_arrays[nq] = sc_array_new (sizeof (p4est_quadrant_t));
+  }
+  recv_array = send_arrays[n_neigh];
+
   /* ghost neighbor balance */
   /* loop over trees: transform non-root quads into their rooted version in
    * neighbor trees */
@@ -1824,7 +1821,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
           }
           sc_array_init_view (&orig_view, tquads, qstart, qend - qstart);
           if (l == P4EST_INSUL / 2) {
-            p4est_balance_sort_divide (p4est, procs, neigh_bufs,
+            p4est_balance_sort_divide (p4est, n_neigh, neigh_procs,
+                                       send_arrays,
                                        t + flt, &orig_view, 1);
           }
           else {
@@ -1849,7 +1847,8 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
                 P4EST_ASSERT (p4est_quadrant_is_valid (&trq[sq]));
               }
               sc_array_sort (&tform_quads, p4est_quadrant_compare);
-              p4est_balance_sort_divide (p4est, procs, neigh_bufs,
+              p4est_balance_sort_divide (p4est, n_neigh, neigh_procs,
+                                         send_arrays,
                                          tn->nt, &tform_quads, 0);
               sc_array_truncate (&tform_quads);
             }
@@ -1862,7 +1861,7 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
       if (!sc_statistics_has (stats, "balance neigh")) {
         sc_statistics_add_empty (stats, "balance neigh");
       }
-      sc_statistics_accumulate (stats, "balance neigh", (double) nneigh);
+      sc_statistics_accumulate (stats, "balance neigh", (double) n_neigh);
       if (!sc_statistics_has (stats, "balance neigh send")) {
         sc_statistics_add_empty (stats, "balance neigh send");
       }
@@ -1902,401 +1901,16 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     sc_array_reset (&tform_quads);
   }
 
-  proc_type = P4EST_ALLOC_ZERO (int, nneigh);
-  proc_smaller = P4EST_ALLOC (int, nneigh);
-  if (tdeg > 0) {
-    /* Gather statistics about the "sizes" of neighboring processes */
-    size_t n;
-    int b;
+  p4est_neigh_alltoallx (neigh, send_arrays, recv_array, NULL);
 
-    int8_t my_level = p4est_process_level (p4est, rank);
-
-    P4EST_ASSERT (sizeof (neigh_entry_t) == sizeof (p4est_quadrant_t));
-
-    if (stats) {
-      if (!sc_statistics_has (stats, "balance neigh larger")) {
-        sc_statistics_add_empty (stats, "balance neigh larger");
-      }
-      if (!sc_statistics_has (stats, "balance neigh same")) {
-        sc_statistics_add_empty (stats, "balance neigh same");
-      }
-      if (!sc_statistics_has (stats, "balance neigh smaller")) {
-        sc_statistics_add_empty (stats, "balance neigh smaller");
-      }
-    }
-
-    for (n = 0; n < nneigh; n++) {
-      int                 p = *((int *) sc_array_index (procs, n));
-      int8_t              this_level = p4est_process_level(p4est, p);
-
-      if (p == rank) {
-        proc_type[n] = NEIGH_SAME;
-        nneigh_same++;
-        continue;
-      }
-
-      if (this_level < my_level) {
-        nneigh_larger++;
-        proc_type[n] = NEIGH_LARGER;
-      }
-      else if (this_level == my_level) {
-        nneigh_same++;
-        proc_type[n] = NEIGH_SAME;
-      }
-      else {
-        proc_smaller[nneigh_smaller++] = (int) n;
-        proc_type[n] = NEIGH_SMALLER;
-      }
-    }
-    if (stats) {
-      sc_statistics_accumulate (stats, "balance neigh larger", (double) nneigh_larger);
-      sc_statistics_accumulate (stats, "balance neigh same", (double) nneigh_same);
-      sc_statistics_accumulate (stats, "balance neigh smaller", (double) nneigh_smaller);
-    }
-    smaller_bufs = P4EST_ALLOC (sc_array_t, tdeg);
-    for (b = 0; b < tdeg; b++) {
-      size_t nzstart = (b * nneigh_smaller) / tdeg;
-      size_t nzend = ((b + 1) * nneigh_smaller) / tdeg;
-      size_t total_quads = 0;
-      size_t offset;
-      neigh_entry_t *ne;
-
-      for (n = nzstart; n < nzend; n++) {
-        int nz = proc_smaller[n];
-
-        total_quads += neigh_bufs[nz].elem_count;
-      }
-      sc_array_init_size (&smaller_bufs[b], sizeof (neigh_entry_t), total_quads + (nzend - nzstart));
-      offset = 0;
-      for (n = nzstart; n < nzend; n++) {
-        int nz = proc_smaller[n];
-        sc_array_t *quads = &neigh_bufs[n];
-
-        ne = (neigh_entry_t *) sc_array_index(&smaller_bufs[b], offset++);
-        ne->p.info.root_proc = rank;
-        ne->p.info.leaf_proc = *((int *) sc_array_index (procs, nz));
-        ne->p.info.count = quads->elem_count;
-        if (quads->elem_count) {
-          memcpy (sc_array_index(&smaller_bufs[b], offset),
-                  sc_array_index(quads, 0),
-                  quads->elem_count * quads->elem_size);
-        }
-        offset += quads->elem_count;
-      }
-    }
-  }
-  else {
-    nneigh_same = nneigh;
-  }
   /* exchange, merge and complete */
   if (num_trees) {
-#ifdef P4EST_ENABLE_MPI
-    size_t              n, ns;
-    MPI_Request        *send_req, *recv_req;
-    MPI_Request        *send_same_req, *recv_same_req,
-                       *send_scat_req, *recv_scat_req,
-                       *send_gath_req, *recv_gath_req;
-    sc_array_t         *recv_buf = NULL;
-    sc_array_t         *scat_bufs;
-    sc_array_t         *gath_bufs;
-    int                 nreq;
-    int                 me = proc_hash[rank];
-    int                 mpiret;
-    int                 nsame_to_recv = 0;
-    int                 nscat_to_recv = 0;
-    int                 ngath_to_recv = 0;
-    int                 total_scat = 0;
-    neigh_info_t       *scat = NULL;
-
-    P4EST_ASSERT (me > 0 && me <= nneigh);
-
-    /* point-to-point with same
-     * <= tdeg for smaller
-     * <= 1 + tdeg for larger (receive from larger (1), and pass on (tdeg)) */
-    nreq = nneigh + (tdeg + 1) * (1 + nneigh_larger);
-    send_req = P4EST_ALLOC (MPI_Request, 2 * nreq);
-    recv_req = &send_req[nreq];
-
-    send_same_req = send_req;
-    send_scat_req = &send_same_req[nneigh];
-    send_gath_req = &send_scat_req[tdeg * (1 + nneigh_larger)];
-
-    recv_same_req = recv_req;
-    recv_scat_req = &recv_same_req[nneigh];
-    recv_gath_req = &recv_scat_req[1 + nneigh_larger];
-
-    for (n = 0; n < nreq; n++) {
-      send_req[n] = MPI_REQUEST_NULL;
-      recv_req[n] = MPI_REQUEST_NULL;
-    }
-
-    scat_bufs = SC_ALLOC (sc_array_t, 2 * (nneigh_larger + 1));
-    gath_bufs = &scat_bufs[nneigh_larger + 1];
-
-    scat = SC_ALLOC (neigh_info_t, tdeg * (1 + nneigh_larger));
-
-    /* Direct point-to-point with equals */
-    recv_buf = &neigh_bufs[me - 1];
-    for (n = 0; n < nneigh; n++) {
-      int                 p = *((int *) sc_array_index (procs, n));
-      sc_array_t         *buf = &neigh_bufs[n];
-
-      if (p == rank) {
-        P4EST_ASSERT (n == me - 1);
-        continue;
-      }
-      if (tdeg > 0 && proc_type[n] != NEIGH_SAME) {
-        continue;
-      }
-      mpiret =
-              MPI_Isend (buf->array, buf->elem_count * sizeof (p4est_quadrant_t),
-                         MPI_BYTE, p, P4EST_COMM_BALANCE_SORT_NEIGH, p4est->mpicomm,
-                         &send_req[n]);
-      SC_CHECK_MPI (mpiret);
-      nsame_to_recv++;
-      if (stats) {
-        sc_statistics_accumulate (stats, "balance neigh send",
-                                  (double) buf->elem_count);
-      }
-
-    }
-    /* Scatter for larger-to-smaller */
-    if (tdeg > 0) {
-      int b;
-
-      for (b = 0; b < tdeg; b++) {
-        sc_array_t *sbuf = &smaller_bufs[b];
-        neigh_entry_t *ne;
-        int dest;
-        int bufsize;
-
-        if (sbuf->elem_count == 0) {
-          continue;
-        }
-        ne = (neigh_entry_t *) sc_array_index (sbuf, 0);
-        dest = ne->p.info.leaf_proc;
-        bufsize = sbuf->elem_size * sbuf->elem_count;
-        mpiret = MPI_Isend (sbuf->array, bufsize, MPI_BYTE, dest,
-                            P4EST_COMM_BALANCE_SORT_NEIGH_DOWN, p4est->mpicomm,
-                            &send_scat_req[b]);
-        SC_CHECK_MPI (mpiret);
-        scat[total_scat].root_proc = rank;
-        scat[total_scat].leaf_proc = dest;
-        scat[total_scat].count = rank;
-        total_scat++;
-        ngath_to_recv++;
-        if (stats) {
-          sc_statistics_accumulate (stats, "balance neigh send",
-                                    (double) sbuf->elem_count);
-        }
-      }
-      nscat_to_recv = nneigh_larger;
-    }
-    while (nsame_to_recv > 0 || ngath_to_recv > 0 || nscat_to_recv > 0) {
-      MPI_Status          status;
-      int                 rcount;
-      int                 p;
-      p4est_quadrant_t   *q;
-
-      mpiret = MPI_Probe (MPI_ANY_SOURCE, MPI_ANY_TAG, p4est->mpicomm, &status);
-      SC_CHECK_MPI (mpiret);
-      P4EST_ASSERT (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH ||
-                    status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_DOWN ||
-                    status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_UP);
-      if (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH) {
-        P4EST_ASSERT (nsame_to_recv > 0);
-        p = status.MPI_SOURCE;
-        P4EST_ASSERT (proc_hash[p] > 0);
-        mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
-        P4EST_ASSERT ((rcount % sizeof (p4est_quadrant_t)) == 0);
-        q =
-           (p4est_quadrant_t *) sc_array_push_count (recv_buf,
-                                                     rcount /
-                                                     sizeof (p4est_quadrant_t));
-        mpiret =
-                MPI_Recv (q, rcount, MPI_BYTE, p, P4EST_COMM_BALANCE_SORT_NEIGH,
-                          p4est->mpicomm, MPI_STATUS_IGNORE);
-        SC_CHECK_MPI (mpiret);
-        if (stats) {
-          sc_statistics_accumulate (stats, "balance neigh recv",
-                                    (double) (rcount /
-                                              sizeof (p4est_quadrant_t)));
-        }
-        nsame_to_recv--;
-      }
-      if (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_DOWN) {
-        int buf_index = --nscat_to_recv;
-        sc_array_t *buf = &scat_bufs[buf_index];
-        neigh_entry_t *ne;
-        int root_proc;
-        size_t offset;
-
-        P4EST_ASSERT (nscat_to_recv >= 0);
-        p = status.MPI_SOURCE;
-        mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
-        P4EST_ASSERT ((rcount % sizeof (neigh_entry_t)) == 0);
-        /* allocate space for scat reception */
-        sc_array_init_size (buf, sizeof (neigh_entry_t), rcount / sizeof (neigh_entry_t));
-        /* parse received scat: push self quads onto recv_buf */
-        mpiret = MPI_Recv(buf->array, rcount, MPI_BYTE, p,
-                          P4EST_COMM_BALANCE_SORT_NEIGH_DOWN,
-                          p4est->mpicomm, MPI_STATUS_IGNORE);
-        SC_CHECK_MPI (mpiret);
-        if (stats) {
-          sc_statistics_accumulate (stats, "balance neigh recv",
-                                    (double) (rcount /
-                                              sizeof (p4est_quadrant_t)));
-        }
-        P4EST_ASSERT (buf->elem_count >= 1);
-        ne = (neigh_entry_t *) sc_array_index (buf, 0);
-        root_proc = ne->p.info.root_proc;
-        P4EST_ASSERT (ne->p.info.leaf_proc == rank);
-        P4EST_ASSERT (proc_hash[root_proc] > 0);
-        offset = 1;
-        offset += ne->p.info.count;
-        P4EST_ASSERT (offset <= buf->elem_count);
-        q =
-           (p4est_quadrant_t *) sc_array_push_count (recv_buf, ne->p.info.count);
-        memcpy (q, sc_array_index (buf, 1), ne->p.info.count * sizeof (p4est_quadrant_t));
-        if (offset == buf->elem_count) {
-          neigh_entry_t * ne;
-          size_t count, bufsize;
-          /* if there are no more leaves, send neigh_buf[root] back */
-          sc_array_t * up_buf = &neigh_bufs[proc_hash[root_proc] - 1];
-
-          count = up_buf->elem_count;
-          ne = (neigh_entry_t *) sc_array_push (up_buf);
-          ne->p.info.root_proc = root_proc;
-          ne->p.info.leaf_proc = rank;
-          ne->p.info.count = count;
-          bufsize = (count + 1) * sizeof (neigh_entry_t);
-          mpiret = MPI_Isend (sc_array_index (up_buf, 0), bufsize, MPI_BYTE, p,
-                              P4EST_COMM_BALANCE_SORT_NEIGH_UP, p4est->mpicomm,
-                              &send_gath_req[buf_index]);
-          SC_CHECK_MPI (mpiret);
-          if (stats) {
-            sc_statistics_accumulate (stats, "balance neigh send",
-                                      (double) (bufsize /
-                                                sizeof (p4est_quadrant_t)));
-          }
-        }
-        else {
-          /* else, use offsets in the scat receive buffer as send buffers
-           * to continue the scat tree and add to the gaths to receive */
-          int b;
-          int nresend = 0;
-          size_t new_offset = offset;
-
-          while (new_offset < buf->elem_count) {
-            neigh_entry_t *newne;
-
-            newne = (neigh_entry_t *) sc_array_index (buf, new_offset);
-            P4EST_ASSERT (newne->p.info.root_proc == root_proc);
-            new_offset += 1 + newne->p.info.count;
-            P4EST_ASSERT (new_offset <= buf->elem_count);
-            nresend++;
-          }
-          P4EST_ASSERT (new_offset == buf->elem_count);
-
-          new_offset = offset;
-          for (b = 0; b < tdeg; b++) {
-            int qstart = (b * nresend) / tdeg;
-            int qend = ((b + 1) * nresend) / tdeg;
-            int iq;
-            int q = -1;
-            size_t count, bufsize;
-
-            count = 0;
-            for (iq = 0; iq < qend - qstart; iq++) {
-              neigh_entry_t *newne;
-
-              newne = (neigh_entry_t *) sc_array_index (buf, new_offset);
-              P4EST_ASSERT (newne->p.info.root_proc == root_proc);
-              if (!iq) {
-                q = newne->p.info.leaf_proc;
-              }
-              count += 1 + newne->p.info.count;
-              P4EST_ASSERT (new_offset <= buf->elem_count);
-            }
-            bufsize = count * sizeof (neigh_entry_t);
-            if (qend > qstart) {
-              mpiret = MPI_Isend (sc_array_index (buf, new_offset), bufsize, MPI_BYTE, q,
-                                  P4EST_COMM_BALANCE_SORT_NEIGH_DOWN, p4est->mpicomm,
-                                  &send_scat_req[tdeg * (1 + buf_index)]);
-              SC_CHECK_MPI (mpiret);
-              scat[total_scat].root_proc = root_proc;
-              scat[total_scat].leaf_proc = q;
-              scat[total_scat].count = p;
-              total_scat++;
-              ngath_to_recv++;
-              if (stats) {
-                sc_statistics_accumulate (stats, "balance neigh send",
-                                          (double) (bufsize /
-                                                    sizeof (p4est_quadrant_t)));
-              }
-            }
-            new_offset += count;
-          }
-        }
-      }
-      if (status.MPI_TAG == P4EST_COMM_BALANCE_SORT_NEIGH_UP) {
-        int buf_index = -1;
-        sc_array_t *buf = NULL;
-        neigh_entry_t *ne;
-        int s, root_proc = -1;
-        int root_complete = 1;
-        int branch = -1;
-        size_t offset;
-
-        P4EST_ASSERT (ngath_to_recv >= 0);
-        p = status.MPI_SOURCE;
-        for (s = 0; s < total_scat; s++) {
-          if (scat[s].leaf_proc == p) {
-            root_proc = scat[s].root_proc;
-            scat[s].leaf_proc = -1;
-            branch = (int) scat[s].count;
-            break;
-          }
-        }
-        P4EST_ASSERT (root_proc >= 0 && proc_hash[root_proc] > 0);
-        buf = &neigh_bufs[proc_hash[root_proc] - 1];
-        mpiret = MPI_Get_count (&status, MPI_BYTE, &rcount);
-        P4EST_ASSERT ((rcount % sizeof (neigh_entry_t)) == 0);
-        ne = sc_array_push_count (buf, rcount / sizeof (neigh_entry_t));
-        /* parse received scat: push self quads onto recv_buf */
-        mpiret = MPI_Recv(ne, rcount, MPI_BYTE, p,
-                          P4EST_COMM_BALANCE_SORT_NEIGH_UP,
-                          p4est->mpicomm, MPI_STATUS_IGNORE);
-        SC_CHECK_MPI (mpiret);
-        if (stats) {
-          sc_statistics_accumulate (stats, "balance neigh recv",
-                                    (double) (rcount /
-                                              sizeof (p4est_quadrant_t)));
-        }
-        for (s = 0; s < total_scat; s++) {
-          if (scat[s].root_proc == root_proc &&
-              scat[s].leaf_proc >= 0) {
-            root_complete = 0;
-            break;
-          }
-        }
-        if (root_complete) {
-        }
-        ngath_to_recv--;
-      }
-    }
-    mpiret = MPI_Waitall ((int) nreq, send_req, MPI_STATUSES_IGNORE);
-    SC_CHECK_MPI (mpiret);
-    P4EST_FREE (scat_bufs);
-    P4EST_FREE (send_req);
-#endif
-
-    sc_array_sort (recv_buf, p4est_quadrant_compare_piggy);
+    sc_array_sort (recv_array, p4est_quadrant_compare_piggy);
 #ifdef P4EST_ENABLE_DEBUG
-    if (recv_buf->elem_count) {
-      p4est_quadrant_t   *first = p4est_quadrant_array_index (recv_buf, 0);
+    if (recv_array->elem_count) {
+      p4est_quadrant_t   *first = p4est_quadrant_array_index (recv_array, 0);
       p4est_quadrant_t   *last =
-        p4est_quadrant_array_index (recv_buf, recv_buf->elem_count - 1);
+        p4est_quadrant_array_index (recv_array, recv_array->elem_count - 1);
       p4est_quadrant_t   *gf = &p4est->global_first_position[rank];
       p4est_quadrant_t   *gn = &p4est->global_first_position[rank + 1];
 
@@ -2319,37 +1933,32 @@ p4est_balance_sort_neigh (p4est_balance_obj_t * bobj,
     {
       size_t              s, n;
 
-      n = recv_buf->elem_count;
+      n = recv_array->elem_count;
       for (s = 0; s < n;) {
         size_t              z;
-        p4est_quadrant_t   *q = p4est_quadrant_array_index (recv_buf, s);
+        p4est_quadrant_t   *q = p4est_quadrant_array_index (recv_array, s);
         p4est_topidx_t      t = q->p.which_tree;
         sc_array_t          view;
 
         for (z = s + 1; z < n; z++) {
-          p4est_quadrant_t   *r = p4est_quadrant_array_index (recv_buf, z);
+          p4est_quadrant_t   *r = p4est_quadrant_array_index (recv_array, z);
 
           if (r->p.which_tree != t) {
             break;
           }
         }
-        sc_array_init_view (&view, recv_buf, s, z - s);
+        sc_array_init_view (&view, recv_array, s, z - s);
         p4est_quadrant_array_reduce (&view, NULL, NULL);
         p4est_quadrant_array_merge_reduce (&tree_bufs[t - flt], &view);
         s = z;
       }
     }
   }
-  if (tdeg > 0) {
-    int b;
 
-    for (b = 0; b < tdeg; b++) {
-      sc_array_reset(&smaller_bufs[b]);
-    }
-    P4EST_FREE (smaller_bufs);
+  for (nq = 0; nq < n_neigh + 1; nq++) {
+    sc_array_destroy (send_arrays[nq]);
   }
-  P4EST_FREE (proc_smaller);
-  P4EST_FREE (proc_type);
+  P4EST_FREE (send_arrays);
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
@@ -2399,19 +2008,16 @@ p4est_balance_sort (p4est_balance_obj_t * bobj, p4est_t * p4est)
   p4est_tree_neigh_info_t *tinfo = NULL;
   int                 num_sort = -1;
   sc_flopinfo_t       snap;
-  sc_array_t         *procs;
-  int                *proc_hash;
   int                 minlevel[2];
   int                 procrange[2][2];
   p4est_quadrant_t    desc[2];
-  size_t              s, nneigh;
   int                 rank = p4est->mpirank;
-  sc_array_t         *neigh_bufs;
   sc_array_t         *tree_bufs;
   sc_array_t          sort_bufs[2];
   p4est_connect_type_t btype;
   p4est_init_t        init_fn;
   p4est_replace_t     replace_fn;
+  p4est_neigh_t      *neigh;
   sc_statistics_t    *stats = NULL;
 
   P4EST_BAL_FUNC_SNAP (bobj, &snap);
@@ -2484,19 +2090,13 @@ p4est_balance_sort (p4est_balance_obj_t * bobj, p4est_t * p4est)
   sc_array_reset (&sort_bufs[1]);
   sc_array_reset (&sort_bufs[0]);
 
-  proc_hash = P4EST_ALLOC_ZERO (int, p4est->mpisize);
-  procs = sc_array_new_size (sizeof (int), P4EST_INSUL);
-  p4est_balance_sort_compute_pattern_neigh (bobj, p4est, flt, llt, num_trees,
-                                            tinfo, proc_hash, procs,
-                                            minlevel, desc);
-  nneigh = procs->elem_count;
-  neigh_bufs = P4EST_ALLOC (sc_array_t, nneigh);
-  for (s = 0; s < nneigh; s++) {
-    sc_array_init (&neigh_bufs[s], sizeof (p4est_quadrant_t));
+  p4est_balance_sort_compute_neigh (bobj, p4est, flt, llt, num_trees,
+                                    tinfo, minlevel, desc, &neigh);
+  p4est_balance_sort_neigh (bobj, p4est, flt, llt, num_trees, tinfo, tree_bufs,
+                            neigh, stats);
+  if (neigh != bobj->neigh) {
+    p4est_neigh_destroy (neigh);
   }
-
-  p4est_balance_sort_neigh (bobj, p4est, flt, llt, num_trees, proc_hash,
-                            procs, tinfo, tree_bufs, neigh_bufs, stats);
 
   p4est_balance_sort_complete (bobj, p4est, flt, llt, num_trees, tree_bufs,
                                init_fn, replace_fn);
@@ -2505,15 +2105,9 @@ p4est_balance_sort (p4est_balance_obj_t * bobj, p4est_t * p4est)
     sc_array_reset (&tree_bufs[t]);
   }
   P4EST_FREE (tree_bufs);
-  for (s = 0; s < nneigh; s++) {
-    sc_array_reset (&neigh_bufs[s]);
-  }
-  P4EST_FREE (neigh_bufs);
-  sc_array_destroy (procs);
   for (t = flt; t <= llt; t++) {
     sc_array_reset (&(tinfo[t - flt].tnarray));
   }
   P4EST_FREE (tinfo);
-  P4EST_FREE (proc_hash);
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }

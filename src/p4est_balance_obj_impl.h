@@ -49,6 +49,7 @@ struct p4est_balance_obj_s
   const int8_t       *adapt_flags;
   int                 use_root;
   int                 neighbor_tree;
+  p4est_neigh_t      *neigh;
 };
 
 #define P4EST_BAL_FUNC_SNAP(bobj,snap)                       \

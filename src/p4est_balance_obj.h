@@ -233,6 +233,9 @@ void                p4est_balance_obj_sort_set_use_root (p4est_balance_obj_t *
 void                p4est_balance_obj_sort_set_neigh_tree_degree (p4est_balance_obj_t *
                                                                   bobj, int degree);
 
+void                p4est_balance_obj_sort_set_ghost (p4est_balance_obj_t *bobj,
+                                                      p4est_ghost_t *ghost);
+
 /** Balance function that takes p4est and balance object as inputs.
  * \ It will perform fusion balancing operations based on methods
  * \ stored in balance object.
