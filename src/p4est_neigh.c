@@ -24,8 +24,10 @@
 
 #if !defined(P4_TO_P8)
 #include <p4est_neigh.h>
+#include <p4est_bits.h>
 #else
 #include <p8est_neigh.h>
+#include <p8est_bits.h>
 #endif
 
 typedef enum
@@ -33,7 +35,7 @@ typedef enum
   P4EST_NEIGH_DEFAULT = -1,
   P4EST_NEIGH_BASIC = 0,
   P4EST_NEIGH_MPI,
-  P4EST_NEIGH_TREE,
+  P4EST_NEIGH_INSUL,
   P4EST_NEIGH_NUM_METHODS,
 }
 p4est_neigh_method_t;
@@ -876,6 +878,445 @@ p4est_neigh_allx_basic (p4est_neigh_t *neigh,
   p4est_neigh_allx_basic_end (neigh, send_arrays, recv_array, recv_offsets, &req);
 }
 
+/* == INSUL == */
+
+typedef struct
+{
+  p4est_topidx_t      nt;
+  int                 nl;
+  int                 u[P4EST_UTRANSFORM];
+}
+p4est_tree_neigh_t;
+
+typedef struct
+{
+  int                 offset[P4EST_INSUL + 1];
+  sc_array_t          tnarray;
+}
+p4est_tree_neigh_info_t;
+
+const static int    p4est_insul_lookup[P4EST_INSUL] = {
+#ifndef P4_TO_P8
+  0, 2, 1, 0, -1, 1, 2, 3, 3,
+#else
+  0, 0, 1, 4, 4, 5, 2, 1, 3,
+  8, 2, 9, 0, -1, 1, 10, 3, 11,
+  4, 2, 5, 6, 5, 7, 6, 3, 7,
+#endif
+};
+
+const static int    p4est_face_to_insul[P4EST_FACES] = {
+#ifndef P4_TO_P8
+  3, 5, 1, 7,
+#else
+  12, 14, 10, 16, 4, 22,
+#endif
+};
+
+#ifdef P4_TO_P8
+const static int    p8est_edge_to_insul[P8EST_EDGES] =
+  { 1, 7, 19, 25, 3, 5, 21, 23, 9, 11, 15, 17 };
+#endif
+const static int    p4est_corner_to_insul[P4EST_CHILDREN] = {
+#ifndef P4_TO_P8
+  0, 2, 6, 8,
+#else
+  0, 2, 6, 8, 18, 20, 24, 26,
+#endif
+};
+
+/* Get and store all of the inter-tree transforms for a tree */
+static void
+p4est_tree_get_conn_info (p4est_t * p4est, p4est_topidx_t t,
+                          p4est_tree_neigh_info_t * info)
+{
+  p4est_connectivity_t *conn = p4est->connectivity;
+  p4est_topidx_t      nt;
+  p4est_quadrant_t    root, neigh;
+  int                 i, j, k, l, nl;
+  int                 kstart, kend;
+  size_t              s, nneigh;
+  p4est_corner_info_t ci;
+  sc_array_t         *cta = &ci.corner_transforms;
+#ifdef P4_TO_P8
+  p8est_edge_info_t   ei;
+  sc_array_t         *eta = &ei.edge_transforms;
+#endif
+
+#ifdef P4_TO_P8
+  kstart = 0;
+  kend = 3;
+#else
+  kstart = 1;
+  kend = 2;
+#endif
+
+  sc_array_init (cta, sizeof (p4est_corner_transform_t));
+#ifdef P4_TO_P8
+  sc_array_init (eta, sizeof (p8est_edge_transform_t));
+#endif
+
+  sc_array_init_size (&(info->tnarray), sizeof (p4est_tree_neigh_t),
+                      P4EST_INSUL);
+  sc_array_truncate (&(info->tnarray));
+
+  memset (&root, 0, sizeof (p4est_quadrant_t));
+
+  /* loop over the tree insulation layer,
+   * cache neighboring trees and transforms */
+  for (k = kstart, l = 0; k < kend; k++) {
+    for (j = 0; j < 3; j++) {
+      for (i = 0; i < 3; i++, l++) {
+        int                 type = (k != 1) + (j != 1) + (i != 1);
+        int                 id = p4est_insul_lookup[l];
+
+        P4EST_ASSERT (l < P4EST_INSUL);
+
+        info->offset[l] = (int) info->tnarray.elem_count;
+
+        if (!type) {
+          p4est_tree_neigh_t *tn = sc_array_push (&info->tnarray);
+
+          tn->nt = t;
+          tn->nl = P4EST_INSUL / 2;
+        }
+        else if (type == 1) {
+          /* outside face */
+          nt =
+            p4est_quadrant_face_neighbor_extra (&root, t, id, &neigh, &nl,
+                                                conn);
+          nl = nl % P4EST_FACES;
+          if (nt >= 0) {
+            int                 f[P4EST_FTRANSFORM];
+            p4est_tree_neigh_t *tn =
+              (p4est_tree_neigh_t *) sc_array_push (&(info->tnarray));
+
+            tn->nt = nt;
+            tn->nl = p4est_face_to_insul[nl];
+            p4est_find_face_transform (conn, t, id, f);
+            p4est_face_transform_to_utransform (f, &(tn->u[0]));
+          }
+        }
+#ifdef P4_TO_P8
+        else if (type == 2) {
+          /* outside edge */
+          p4est_tree_neigh_t *tn;
+
+          p8est_find_edge_transform (conn, t, id, &ei);
+          nneigh = eta->elem_count;
+          tn =
+            (p4est_tree_neigh_t *) sc_array_push_count (&(info->tnarray),
+                                                        nneigh);
+          for (s = 0; s < nneigh; s++) {
+            p8est_edge_transform_t *et = p8est_edge_array_index (eta, s);
+
+            tn[s].nt = et->ntree;
+            tn[s].nl = p8est_edge_to_insul[et->nedge];
+            p8est_edge_transform_to_utransform (et, id, &(tn[s].u[0]));
+          }
+          sc_array_truncate (eta);
+        }
+#endif
+        else {
+          /* outside corner */
+          p4est_tree_neigh_t *tn;
+
+          p4est_find_corner_transform (conn, t, id, &ci);
+          nneigh = cta->elem_count;
+          tn =
+            (p4est_tree_neigh_t *) sc_array_push_count (&(info->tnarray),
+                                                        nneigh);
+          for (s = 0; s < nneigh; s++) {
+            p4est_corner_transform_t *ct = p4est_corner_array_index (cta, s);
+
+            tn[s].nt = ct->ntree;
+            tn[s].nl = p4est_corner_to_insul[ct->ncorner];
+            p4est_corner_transform_to_utransform (ct, id, &(tn[s].u[0]));
+          }
+        }
+      }
+    }
+  }
+  info->offset[P4EST_INSUL] = info->tnarray.elem_count;
+
+  sc_array_reset (cta);
+#ifdef P4_TO_P8
+  sc_array_reset (eta);
+#endif
+  return;
+}
+
+/* Which insulation neighbor of the root does \a q belong to? */
+static int
+p4est_root_insul (p4est_quadrant_t * q)
+{
+  p4est_qcoord_t      x[P4EST_DIM];
+  int                 i;
+  int                 total;
+
+  P4EST_ASSERT (p4est_quadrant_is_extended (q));
+
+  x[0] = (q->x >> P4EST_MAXLEVEL);
+  x[1] = (q->y >> P4EST_MAXLEVEL);
+#ifdef P4_TO_P8
+  x[2] = (q->z >> P4EST_MAXLEVEL);
+#endif
+  for (i = P4EST_DIM - 1, total = 0; i >= 0; i--) {
+    total *= 3;
+    P4EST_ASSERT (-1 <= x[i] && x[i] <= 1);
+    total += x[i] + 1;
+  }
+  P4EST_ASSERT (0 <= total && total < P4EST_INSUL);
+  return total;
+}
+
+/* Get the coarsest forest within the range */
+static void
+p4est_neigh_insul_get_coarsest (p4est_t *p4est, sc_array_t * quads)
+{
+  int rank = p4est->mpirank;
+  p4est_quadrant_t s = p4est->global_first_position[rank];
+  p4est_quadrant_t e = p4est->global_first_position[rank+1];
+  p4est_quadrant_t p;
+  int8_t lolimit;
+  int sid, eid;
+
+  P4EST_ASSERT (quads->elem_size == sizeof (p4est_quadrant_t));
+
+  if (p4est_quadrant_is_equal_piggy (&s, &e)) {
+    return;
+  }
+  /* transform e from first quad of next rank to last quad of this rank */
+  if (e.x == 0 && e.y == 0 &&
+#if defined(P4_TO_P8)
+      e.z == 0 &&
+#endif
+      1) {
+    e.p.which_tree--;
+    e.x = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
+    e.y = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
+#if defined(P4_TO_P8)
+    e.z = P4EST_ROOT_LEN - P4EST_QUADRANT_LEN (P4EST_QMAXLEVEL);
+#endif
+  }
+  else {
+    uint64_t morton = p4est_quadrant_linear_id (&e, P4EST_QMAXLEVEL);
+    p4est_quadrant_set_morton (&e, P4EST_QMAXLEVEL, morton-1);
+  }
+  P4EST_ASSERT (p4est_quadrant_compare_piggy (&s, &e) <= 0);
+
+  /* find the coarsest level for quadrants that can be in quads */
+  if (s.p.which_tree == e.p.which_tree) {
+    p4est_quadrant_t a, as, ae;
+
+    P4EST_QUADRANT_INIT (&a);
+    p4est_nearest_common_ancestor (&s, &e, &a);
+    p4est_quadrant_first_descendant(&a, &as, P4EST_QMAXLEVEL);
+    p4est_quadrant_last_descendant(&a, &ae, P4EST_QMAXLEVEL);
+    if (p4est_quadrant_is_equal (&as, &s) &&
+        p4est_quadrant_is_equal (&ae, &e)) {
+      /* a is equal to the range */
+      p4est_quadrant_t *q = p4est_quadrant_array_push (quads);
+
+      *q = a;
+      q->p.which_tree = s.p.which_tree;
+      return;
+    }
+    lolimit = a.level + 1;
+  }
+  else {
+    lolimit = 0;
+  }
+
+  /* add quads on the upswing, starting from s */
+  {
+    int8_t hilimit = P4EST_QMAXLEVEL;
+    p4est_quadrant_t *q, *qsib;
+    int i;
+
+    /* get coarsest quad that starts as s */
+    while ((sid = p4est_quadrant_ancestor_id (&s, hilimit)) == 0 && hilimit > lolimit) {
+      hilimit--;
+    }
+    q = p4est_quadrant_array_push (quads);
+    P4EST_QUADRANT_INIT (q);
+    p4est_quadrant_ancestor (&s, hilimit, q);
+    q->p.which_tree = s.p.which_tree;
+    p = *q;
+    /* add trailing sibling for all levels past lolimit */
+    while (hilimit > lolimit) {
+      p4est_quadrant_t np;
+
+      qsib = (p4est_quadrant_t *) sc_array_push_count (quads, P4EST_CHILDREN - (sid + 1));
+      for (i = sid + 1; i < P4EST_CHILDREN; i++) {
+        P4EST_QUADRANT_INIT (&qsib[i - (sid + 1)]);
+        p4est_quadrant_sibling (&p, &qsib[i - (sid + 1)], i);
+        qsib[i - (sid + 1)].p.which_tree = p.p.which_tree;
+      }
+      np = p;
+      p4est_quadrant_parent (&np, &p);
+      sid = p4est_quadrant_child_id (&p);
+      hilimit--;
+    }
+    P4EST_ASSERT (p.level == lolimit);
+    P4EST_ASSERT (sid == p4est_quadrant_child_id (&p));
+  }
+  eid = p4est_quadrant_ancestor_id (&e, lolimit);
+
+  /* add lolimit quads */
+  if (s.p.which_tree == e.p.which_tree) {
+    int i;
+    p4est_quadrant_t np;
+    p4est_quadrant_t *qsib = (p4est_quadrant_t *) sc_array_push_count (quads, eid - (sid + 1));
+
+    P4EST_ASSERT (sid < eid);
+    for (i = sid + 1; i < eid; i++) {
+      P4EST_QUADRANT_INIT (&qsib[i - (sid + 1)]);
+      p4est_quadrant_sibling (&p, &qsib[i - (sid + 1)], i);
+      qsib[i - (sid + 1)].p.which_tree = s.p.which_tree;
+    }
+    np = p;
+    p4est_quadrant_sibling (&np, &p, eid);
+  }
+  else {
+    p4est_topidx_t i;
+
+    P4EST_ASSERT (lolimit == 0);
+    p4est_quadrant_t *qsib = (p4est_quadrant_t *) sc_array_push_count (quads, e.p.which_tree - (s.p.which_tree + 1));
+    for (i = 0; i < e.p.which_tree - (s.p.which_tree + 1); i++) {
+      P4EST_QUADRANT_INIT (&qsib[i]);
+      qsib[i].x = 0;
+      qsib[i].y = 0;
+#if defined(P4_TO_P8)
+      qsib[i].z = 0;
+#endif
+      qsib[i].level = 0;
+      qsib[i].p.which_tree = i + s.p.which_tree + 1;
+    }
+    p.x = 0;
+    p.y = 0;
+#if defined(P4_TO_P8)
+    p.z = 0;
+#endif
+    p.level = 0;
+    p.p.which_tree = e.p.which_tree;
+  }
+
+  P4EST_ASSERT (p.level == lolimit);
+  P4EST_ASSERT (p.p.which_tree == s.p.which_tree);
+  P4EST_ASSERT (eid == p4est_quadrant_child_id (&p));
+
+  /* add quads on the upswing, starting with the children of p */
+  {
+    int8_t l, hilimit = P4EST_QMAXLEVEL;
+    p4est_quadrant_t *q;
+
+    /* level of coarsest quad that ends at the same location as e */
+    while (hilimit > lolimit && p4est_quadrant_ancestor_id (&e, hilimit) == P4EST_CHILDREN - 1) {
+      hilimit--;
+    }
+    /* add leading children of p that don't overlap e */
+    for (l = lolimit + 1; l <= hilimit; l++) {
+      int id = p4est_quadrant_ancestor_id (&e, l);
+      int i;
+      p4est_quadrant_t np;
+
+      np = p;
+      p4est_quadrant_first_descendant (&np, &p, l);
+      p4est_quadrant_t *qsib = (p4est_quadrant_t *) sc_array_push_count (quads, id);
+
+      for (i = 0; i < id; i++) {
+        P4EST_QUADRANT_INIT (&qsib[i]);
+        p4est_quadrant_sibling (&p, &qsib[i], i);
+        qsib[i].p.which_tree = e.p.which_tree;
+      }
+    }
+    /* add the coarsest quad that ends at the same location as e */
+    q = p4est_quadrant_array_push (quads);
+    P4EST_QUADRANT_INIT (q);
+    p4est_quadrant_ancestor (&e, hilimit, q);
+    q->p.which_tree = e.p.which_tree;
+  }
+  P4EST_ASSERT (sc_array_is_sorted (quads, p4est_quadrant_compare_piggy));
+}
+
+/* add quad/insul quad pairs to the list for each quad */
+static void
+p4est_neigh_insul_get_pairs (p4est_t *p4est, sc_array_t *quads, sc_array_t
+                             *insul_quads, p4est_tree_neigh_info_t *info)
+{
+  size_t nquads = quads->elem_count, z;
+
+  for (z = 0; z < nquads; z++) {
+    p4est_quadrant_t *q = p4est_quadrant_array_index (quads, z);
+    p4est_topidx_t this_tree = q->p.which_tree;
+    int l, m, n;
+    int nstart, nend;
+    p4est_tree_neigh_info_t *tinfo = &info[this_tree - p4est->first_local_tree];
+    p4est_qcoord_t h = P4EST_QUADRANT_LEN (q->level);
+
+#if !defined(P4_TO_P8)
+    nstart = 1;
+    nend = 2;
+#else
+    nstart = 0;
+    nend = 3;
+#endif
+    for (n = nstart; n < nend; n++) {
+      for (m = 0; m < 3; m++) {
+        for (l = 0; l < 3; l++) {
+          p4est_quadrant_t nh = *q;
+          int root_i;
+
+          nh.x += (l - 1) * h;
+          nh.y += (m - 1) * h;
+#if defined(P4_TO_P8)
+          nh.z += (n - 1) * h;
+#endif
+          root_i = p4est_root_insul (&nh);
+          if (root_i == P4EST_INSUL / 2) {
+            p4est_quadrant_t * nq = p4est_quadrant_array_push (insul_quads);
+
+            nq[0] = nh;
+            nq[0].p.which_tree = this_tree;
+            nq[1] = nh;
+            nq[1].p.which_tree = this_tree;
+          }
+          else {
+            size_t s, s_start, s_end;
+
+            s_start = tinfo->offset[root_i];
+            s_end = tinfo->offset[root_i + 1];
+            for (s = s_start; s < s_end; s++) {
+              p4est_quadrant_t   *nq = p4est_quadrant_array_push (insul_quads);
+              p4est_tree_neigh_t *tn =
+                (p4est_tree_neigh_t *) sc_array_index (&(tinfo->tnarray), s);
+
+              p4est_quadrant_utransform (&nh, &nq[0], &(tn->u[0]), 0);
+              nq[0].p.which_tree = tn->nt;
+              nq[1] = nh;
+              nq[1].p.which_tree = this_tree;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+static void
+p4est_neigh_insul_get_overlaps (sc_array_t *quads, sc_array_t *insul_quads, p4est_tree_neigh_info_t *info)
+{
+  size_t nquads = quads->elem_count, z;
+  p4est_quadrant_t *s, *e;
+  p4est_quadrant_t a;
+
+  if (!nquads) {
+    return;
+  }
+  s = p4est_quadrant_array_index (quads, 0);
+  e = p4est_quadrant_array_index (quads, nquads - 1);
+}
 
 /* == INTERFACE == */
 

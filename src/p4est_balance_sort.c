@@ -1620,6 +1620,7 @@ p4est_balance_sort_merge_seeds (p4est_balance_obj_t * bobj,
   P4EST_BAL_FUNC_SHOT (bobj, &snap);
 }
 
+#if 0
 static int8_t
 p4est_process_level (p4est_t *p4est, int p)
 {
@@ -1715,6 +1716,7 @@ p4est_process_level (p4est_t *p4est, int p)
   }
   return SC_MIN(l_level, f_level);
 }
+#endif
 
 enum {
   NEIGH_SAME = 0,
