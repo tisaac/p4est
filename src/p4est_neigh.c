@@ -52,9 +52,36 @@ enum
   P4EST_NEIGH_BASIC_ALLV,
 };
 
+typedef struct
+{
+  p4est_topidx_t      nt;
+  int                 nl;
+  int                 u[P4EST_UTRANSFORM];
+}
+p4est_tree_neigh_t;
+
+typedef struct
+{
+  int                 offset[P4EST_INSUL + 1];
+  sc_array_t          tnarray;
+}
+p4est_tree_neigh_info_t;
+
+
 typedef struct p4est_neigh_insul_s
 {
   p4est_t *p4est;
+  int min_tree_peer;
+  int max_tree_peer;
+  sc_array_t *first_sends;
+  sc_array_t *first_recvs;
+  sc_array_t *last_sends;
+  sc_array_t *last_recvs;
+  sc_array_t *peer_lt;
+  sc_array_t *peer_gt;
+  sc_array_t **tree_sched_lt;
+  sc_array_t **tree_sched_gt;
+  p4est_tree_neigh_info_t *info;
 }
 p4est_neigh_insul_t;
 
@@ -103,6 +130,7 @@ p4est_neigh_msg_cmp (const void *A, const void *B)
 #endif
 
 static void p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t * p4est);
+static void p4est_neigh_insul_reset (p4est_neigh_t *neigh);
 
 p4est_neigh_t *
 p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
@@ -206,11 +234,14 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
 void
 p4est_neigh_destroy (p4est_neigh_t *neigh)
 {
+  p4est_neigh_insul_reset (neigh);
 #if defined(P4EST_NEIGH_COMM_DUP)
-  int mpiret;
+  {
+    int mpiret;
 
-  mpiret = sc_MPI_Comm_free(&(neigh->comm));
-  SC_CHECK_MPI (mpiret);
+    mpiret = sc_MPI_Comm_free(&(neigh->comm));
+    SC_CHECK_MPI (mpiret);
+  }
 #endif
   P4EST_FREE (neigh->neigh_perm);
   if (neigh->neigh_procs_sorted != neigh->neigh_procs) {
@@ -907,21 +938,6 @@ p4est_neigh_allx_basic (p4est_neigh_t *neigh,
 
 /* == INSUL == */
 
-typedef struct
-{
-  p4est_topidx_t      nt;
-  int                 nl;
-  int                 u[P4EST_UTRANSFORM];
-}
-p4est_tree_neigh_t;
-
-typedef struct
-{
-  int                 offset[P4EST_INSUL + 1];
-  sc_array_t          tnarray;
-}
-p4est_tree_neigh_info_t;
-
 const static int    p4est_insul_lookup[P4EST_INSUL] = {
 #ifndef P4_TO_P8
   0, 2, 1, 0, -1, 1, 2, 3, 3,
@@ -1522,6 +1538,69 @@ p4est_neigh_insul_compare_2 (const void *a, const void *b)
 }
 
 static void
+p4est_neigh_insul_reset (p4est_neigh_t *neigh)
+{
+  p4est_neigh_insul_t *insul = &neigh->data.insul;
+  p4est_topidx_t t;
+  p4est_topidx_t flt = insul->p4est->first_local_tree;
+  p4est_topidx_t llt = insul->p4est->last_local_tree;
+  size_t z;
+
+  if (insul->peer_lt) {
+    for (z = 0; z < insul->peer_lt->elem_count; z++) {
+      sc_array_destroy (insul->tree_sched_lt[z]);
+    }
+    P4EST_FREE (insul->tree_sched_lt);
+    sc_array_destroy (insul->peer_lt);
+  }
+  if (insul->peer_gt) {
+    for (z = 0; z < insul->peer_gt->elem_count; z++) {
+      sc_array_destroy (insul->tree_sched_gt[z]);
+    }
+    P4EST_FREE (insul->tree_sched_gt);
+    sc_array_destroy (insul->peer_gt);
+  }
+  if (insul->first_sends) {sc_array_destroy (insul->first_sends);}
+  if (insul->first_recvs) {sc_array_destroy (insul->first_recvs);}
+  if (insul->last_sends) {sc_array_destroy (insul->last_sends);}
+  if (insul->last_recvs) {sc_array_destroy (insul->last_recvs);}
+  for (t = flt; t <= llt; t++) {
+    p4est_tree_neigh_info_reset (&insul->info[t - flt]);
+  }
+  P4EST_FREE (insul->info);
+}
+
+static int
+interval_compare (const void * key, const void * array)
+{
+  const int *a = (const int *) array;
+  int b = *((const int *) key);
+
+  if (b < a[0]) {
+    return -1;
+  }
+  if (b > a[1]) {
+    return 1;
+  }
+  return 0;
+}
+
+static int
+interval_sort (const void * a, const void * b)
+{
+  const int *A = (const int *) a;
+  const int *B = (const int *) b;
+
+  if (A[1] <= B[0]) {
+    return A[0] - B[1];
+  }
+  if (B[1] <= A[0]) {
+    return A[1] - B[0];
+  }
+  return 0;
+}
+
+static void
 p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
 {
   p4est_neigh_insul_t *insul = &(neigh->data.insul);
@@ -1546,6 +1625,7 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
   sc_array_t *peer_gt;
   sc_array_t **tree_sched_lt;
   sc_array_t **tree_sched_gt;
+  sc_array_t *all_intervals;
   int rank = p4est->mpirank;
 
   insul->p4est = p4est;
@@ -1886,6 +1966,7 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
   last_recv = sc_array_new (sizeof (int));
   min_tree_peer = rank;
   max_tree_peer = rank;
+  all_intervals = sc_array_new (2 * sizeof (int));
   for (z = 0; z < groups->elem_count; z++) {
     int *g = (int *) sc_array_index (groups, z);
     P4EST_LDEBUGF ("group %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
@@ -2023,72 +2104,115 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
 #if defined(P4EST_ENABLE_DEBUG)
   for (z = 0; z < groups->elem_count; z++) {
     int *g = (int *) sc_array_index (groups, z);
-    P4EST_ESSENTIALF ("group %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+    P4EST_LDEBUGF ("group %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
   }
   for (z = 0; z < first_send->elem_count; z++) {
     int *p = (int *) sc_array_index (first_send, z);
 
-    P4EST_ESSENTIALF ("first send to %d [%d, %d]\n", p[0], p[1], p[2]);
+    P4EST_LDEBUGF ("first send to %d [%d, %d]\n", p[0], p[1], p[2]);
   }
   for (z = 0; z < first_recv->elem_count; z++) {
     int *p = (int *) sc_array_index (first_recv, z);
 
-    P4EST_ESSENTIALF ("first recv from %d\n", p[0]);
+    P4EST_LDEBUGF ("first recv from %d\n", p[0]);
   }
-  P4EST_ESSENTIALF ("tree peers [%d, %d]\n", min_tree_peer, max_tree_peer);
+  P4EST_LDEBUGF ("tree peers [%d, %d]\n", min_tree_peer, max_tree_peer);
   for (z = 0; z < peer_lt->elem_count; z++) {
     int *p = (int *) sc_array_index (peer_lt, z);
     size_t zz;
 
-    P4EST_ESSENTIALF ("lt peer %d\n", p[0]);
+    P4EST_LDEBUGF ("lt peer %d\n", p[0]);
     for (zz = 0; zz < tree_sched_lt[z]->elem_count; zz++) {
       p = (int *) sc_array_index (tree_sched_lt[z], zz);
-      P4EST_ESSENTIALF ("[%d,%d]\n", p[0], p[1]);
+      P4EST_LDEBUGF ("[%d,%d]\n", p[0], p[1]);
     }
   }
   for (z = 0; z < peer_gt->elem_count; z++) {
     int *p = (int *) sc_array_index (peer_gt, z);
     size_t zz;
 
-    P4EST_ESSENTIALF ("gt peer %d\n", p[0]);
+    P4EST_LDEBUGF ("gt peer %d\n", p[0]);
     for (zz = 0; zz < tree_sched_gt[z]->elem_count; zz++) {
       p = (int *) sc_array_index (tree_sched_gt[z], zz);
-      P4EST_ESSENTIALF ("[%d,%d]\n", p[0], p[1]);
+      P4EST_LDEBUGF ("[%d,%d]\n", p[0], p[1]);
     }
   }
   for (z = 0; z < last_send->elem_count; z++) {
     int *p = (int *) sc_array_index (last_send, z);
 
-    P4EST_ESSENTIALF ("last send to %d\n", p[0]);
+    P4EST_LDEBUGF ("last send to %d\n", p[0]);
   }
   for (z = 0; z < last_recv->elem_count; z++) {
     int *p = (int *) sc_array_index (last_recv, z);
 
-    P4EST_ESSENTIALF ("last recv from %d\n", p[0]);
+    P4EST_LDEBUGF ("last recv from %d\n", p[0]);
   }
-#endif
+  sc_array_resize (all_intervals, groups->elem_count + 1);
+  sc_array_truncate (all_intervals);
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
 
-  for (z = 0; z < peer_gt->elem_count; z++) {
-    sc_array_destroy (tree_sched_gt[z]);
+    if (g[0] == rank) {
+      int *p = (int *) sc_array_push (all_intervals);
+
+      p[0] = g[1];
+      p[1] = g[2];
+    }
+    else if (g[0] < g[1] || g[0] > g[2]) {
+      int *p = (int *) sc_array_push (all_intervals);
+      p[0] = g[0];
+      p[1] = g[0];
+    }
   }
-  for (z = 0; z < peer_lt->elem_count; z++) {
-    sc_array_destroy (tree_sched_lt[z]);
+  {
+    int *p = (int *) sc_array_push (all_intervals);
+    p[0] = min_tree_peer;
+    p[1] = max_tree_peer;
   }
-  P4EST_FREE (tree_sched_gt);
-  P4EST_FREE (tree_sched_lt);
-  sc_array_destroy (peer_lt);
-  sc_array_destroy (peer_gt);
-  sc_array_destroy (last_recv);
-  sc_array_destroy (last_send);
-  sc_array_destroy (first_recv);
-  sc_array_destroy (first_send);
+  sc_array_sort (all_intervals, interval_sort);
+#endif
+  {
+    int n_neigh;
+    const int *neigh_procs;
+    int n;
+
+    p4est_neigh_get_procs (neigh, &n_neigh, &neigh_procs);
+    sc_array_sort (first_send, interval_sort);
+
+    for (n = 0; n < n_neigh; n++) {
+      int p = neigh_procs[n];
+
+      ssize_t sidx = sc_array_bsearch (all_intervals, (const void *) &p,
+                                       interval_compare);
+
+      if (sidx < 0) {
+        int *pp;
+
+        P4EST_ESSENTIALF ("new neigh %d\n", p);
+
+        pp = (int *) sc_array_push (first_send);
+        pp[0] = p;
+        pp = (int *) sc_array_push (first_recv);
+        pp[0] = p;
+      }
+    }
+  }
+
+  neigh->data.insul.first_sends = first_send;
+  neigh->data.insul.first_recvs = first_recv;
+  neigh->data.insul.last_sends = last_send;
+  neigh->data.insul.last_recvs = last_recv;
+  neigh->data.insul.min_tree_peer = min_tree_peer;
+  neigh->data.insul.max_tree_peer = max_tree_peer;
+  neigh->data.insul.peer_lt = peer_lt;
+  neigh->data.insul.peer_gt = peer_gt;
+  neigh->data.insul.tree_sched_lt = tree_sched_lt;
+  neigh->data.insul.tree_sched_gt = tree_sched_gt;
+  neigh->data.insul.info = info;
+  sc_array_destroy (all_intervals);
   sc_array_destroy (groups);
   sc_array_destroy (first_last_procs);
   sc_array_destroy (insul_quads);
-  for (t = flt; t <= llt; t++) {
-    p4est_tree_neigh_info_reset (&info[t - flt]);
-  }
-  P4EST_FREE (info);
 }
 
 /* == INTERFACE == */
