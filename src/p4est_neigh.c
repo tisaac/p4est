@@ -1591,13 +1591,33 @@ interval_sort (const void * a, const void * b)
   const int *A = (const int *) a;
   const int *B = (const int *) b;
 
+#if 0
   if (A[1] <= B[0]) {
     return A[0] - B[1];
   }
   if (B[1] <= A[0]) {
     return A[1] - B[0];
   }
-  return 0;
+#endif
+  if (A[0] != B[0]) {
+    return A[0] - B[0];
+  }
+  return B[1] - A[1];
+}
+
+static int
+interval_overlap (const void * a, const void * b)
+{
+  const int *A = (const int *) a;
+  const int *B = (const int *) b;
+
+  if (A[0] <= B[0] && A[1] >= B[1]) {
+    return 0;
+  }
+  if (A[0] != B[0]) {
+    return A[0] - B[0];
+  }
+  return B[1] - A[1];
 }
 
 static void
@@ -2170,6 +2190,7 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
     p[1] = max_tree_peer;
   }
   sc_array_sort (all_intervals, interval_sort);
+  sc_array_uniq (all_intervals, interval_overlap);
 #endif
   {
     int n_neigh;
