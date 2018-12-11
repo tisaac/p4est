@@ -32,6 +32,10 @@
 #include <p8est_communication.h>
 #endif
 
+#if 0
+#define P4EST_NEIGH_COMM_DUP 1
+#endif
+
 typedef enum
 {
   P4EST_NEIGH_DEFAULT = -1,
@@ -98,6 +102,8 @@ p4est_neigh_msg_cmp (const void *A, const void *B)
 }
 #endif
 
+static void p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t * p4est);
+
 p4est_neigh_t *
 p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
 {
@@ -118,8 +124,12 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
     /* TODO: create distributed graph MPI_Dist_graph_create_adjacent */
   }
   else {
+#if defined(P4EST_NEIGH_COMM_DUP)
     mpiret = sc_MPI_Comm_dup (p4est->mpicomm, &(neigh->comm));
     SC_CHECK_MPI (mpiret);
+#else
+    neigh->comm = p4est->mpicomm;
+#endif
   }
   mpiret = sc_MPI_Comm_size (neigh->comm, &(neigh->size));
   SC_CHECK_MPI (mpiret);
@@ -188,16 +198,20 @@ p4est_neigh_new (p4est_t *p4est, int n_neigh, const int *neigh_procs)
   }
 #endif
 
+  p4est_neigh_insul_setup (neigh, p4est);
+
   return neigh;
 }
 
 void
 p4est_neigh_destroy (p4est_neigh_t *neigh)
 {
+#if defined(P4EST_NEIGH_COMM_DUP)
   int mpiret;
 
   mpiret = sc_MPI_Comm_free(&(neigh->comm));
   SC_CHECK_MPI (mpiret);
+#endif
   P4EST_FREE (neigh->neigh_perm);
   if (neigh->neigh_procs_sorted != neigh->neigh_procs) {
     P4EST_FREE (neigh->neigh_procs_sorted);
@@ -1120,6 +1134,7 @@ p4est_neigh_insul_get_coarsest (p4est_t *p4est, sc_array_t * quads)
   }
   else {
     uint64_t morton = p4est_quadrant_linear_id (&e, P4EST_QMAXLEVEL);
+
     p4est_quadrant_set_morton (&e, P4EST_QMAXLEVEL, morton-1);
   }
   P4EST_ASSERT (p4est_quadrant_compare_piggy (&s, &e) <= 0);
@@ -1241,7 +1256,7 @@ p4est_neigh_insul_get_coarsest (p4est_t *p4est, sc_array_t * quads)
       p4est_quadrant_t np;
 
       np = p;
-      p4est_quadrant_first_descendant (&np, &p, l);
+      p4est_quadrant_corner_descendant(&np, &p, id, l);
       p4est_quadrant_t *qsib = (p4est_quadrant_t *) sc_array_push_count (quads, id);
 
       for (i = 0; i < id; i++) {
@@ -1272,6 +1287,7 @@ p4est_neigh_insul_get_pairs (p4est_t *p4est, sc_array_t *quads, sc_array_t
     p4est_topidx_t this_tree = q->p.which_tree;
     int l, m, n;
     int nstart, nend;
+    int sib_handled = 0;
     p4est_tree_neigh_info_t *tinfo = &info[this_tree - p4est->first_local_tree];
     p4est_qcoord_t h = P4EST_QUADRANT_LEN (q->level);
 
@@ -1294,6 +1310,13 @@ p4est_neigh_insul_get_pairs (p4est_t *p4est, sc_array_t *quads, sc_array_t
 #if defined(P4_TO_P8)
           nh.z += (n - 1) * h;
 #endif
+          if (q->level > 0 && p4est_quadrant_is_sibling (&nh, q)) {
+            if (sib_handled) {
+              continue;
+            }
+            sib_handled = 1;
+            p4est_quadrant_parent (q, &nh);
+          }
           root_i = p4est_root_insul (&nh);
           if (root_i == P4EST_INSUL / 2) {
             p4est_quadrant_t * nq;
@@ -1318,12 +1341,12 @@ p4est_neigh_insul_get_pairs (p4est_t *p4est, sc_array_t *quads, sc_array_t
               p4est_tree_neigh_t *tn =
                 (p4est_tree_neigh_t *) sc_array_index (&(tinfo->tnarray), s);
 
-              p4est_quadrant_utransform (&nnh, &nh, &(tn->u[0]), 0);
-              if (p4est_comm_is_contained(p4est, tn->nt, &nh, rank)) {
+              p4est_quadrant_utransform (&nh, &nnh, &(tn->u[0]), 0);
+              if (p4est_comm_is_contained(p4est, tn->nt, &nnh, rank)) {
                 continue;
               }
               nq = (p4est_quadrant_t *) sc_array_push (insul_quads);
-              nq[0] = nh;
+              nq[0] = nnh;
               nq[0].p.which_tree = tn->nt;
               nq[1] = *q;
               nq[1].p.which_tree = this_tree;
@@ -1340,7 +1363,7 @@ p4est_neigh_insul_get_overlaps (p4est_t *p4est, sc_array_t *quads, sc_array_t *i
 {
   size_t nquads = quads->elem_count;
   p4est_quadrant_t *q[2];
-  p4est_quadrant_t a;
+  p4est_quadrant_t a, a_par;
   int rank = p4est->mpirank;
   int start[2] = {0,0};
   int i;
@@ -1373,6 +1396,11 @@ p4est_neigh_insul_get_overlaps (p4est_t *p4est, sc_array_t *quads, sc_array_t *i
 
       p4est_quadrant_ancestor (b, l, &a);
 
+      a_par = a;
+      if (a.level > 0) {
+        p4est_quadrant_parent (&a, &a_par);
+      }
+
       P4EST_ASSERT (!p4est_comm_is_contained (p4est, this_tree, &a, rank));
 #if !defined(P4_TO_P8)
       f_start = 1;
@@ -1386,6 +1414,7 @@ p4est_neigh_insul_get_overlaps (p4est_t *p4est, sc_array_t *quads, sc_array_t *i
           for (d = 0; d < 3; d++, g++) {
             p4est_quadrant_t n = a;
             int root_i;
+            int use_a_par = 0;
 
             n.x += (d - 1) * h;
             n.y += (e - 1) * h;
@@ -1394,12 +1423,19 @@ p4est_neigh_insul_get_overlaps (p4est_t *p4est, sc_array_t *quads, sc_array_t *i
 #endif
 
             root_i = p4est_root_insul (&n);
+            if (a.level > 0 && p4est_quadrant_is_sibling (&n, &a)) {
+              use_a_par = 1;
+            }
             if (root_i == P4EST_INSUL / 2) {
-              p4est_quadrant_t * nq = (p4est_quadrant_t *) sc_array_push (insul_quads);
+              p4est_quadrant_t * nq;
+              if (p4est_comm_is_contained (p4est, this_tree, &n, rank)) {
+                continue;
+              }
+              nq = (p4est_quadrant_t *) sc_array_push (insul_quads);
 
               nq[0] = n;
               nq[0].p.piggy1.which_tree = this_tree;
-              nq[1] = a;
+              nq[1] = use_a_par ? a_par : a;
               nq[1].p.piggy1.which_tree = this_tree;
             }
             else {
@@ -1408,13 +1444,19 @@ p4est_neigh_insul_get_overlaps (p4est_t *p4est, sc_array_t *quads, sc_array_t *i
               s_start = tinfo->offset[root_i];
               s_end = tinfo->offset[root_i + 1];
               for (s = s_start; s < s_end; s++) {
-                p4est_quadrant_t   *nq = (p4est_quadrant_t *) sc_array_push (insul_quads);
+                p4est_quadrant_t nn = n;
+                p4est_quadrant_t   *nq;
                 p4est_tree_neigh_t *tn =
                                         (p4est_tree_neigh_t *) sc_array_index (&(tinfo->tnarray), s);
 
-                p4est_quadrant_utransform (&n, &nq[0], &(tn->u[0]), 0);
+                p4est_quadrant_utransform (&n, &nn, &(tn->u[0]), 0);
+                if (p4est_comm_is_contained (p4est, tn->nt, &nn, rank)) {
+                  continue;
+                }
+                nq = (p4est_quadrant_t *) sc_array_push (insul_quads);
+                nq[0] = nn;
                 nq[0].p.piggy1.which_tree = tn->nt;
-                nq[1] = a;
+                nq[1] = use_a_par ? a_par : a;
                 nq[1].p.piggy1.which_tree = this_tree;
               }
             }
@@ -1449,6 +1491,36 @@ p4est_neigh_insul_get_first_last (sc_array_t *insul_quads, sc_array_t *first_las
   sc_array_sort (first_last_quads, p4est_quadrant_compare_piggy);
 }
 
+static int
+p4est_neigh_insul_compare_1 (const void *a, const void *b)
+{
+  const int *A = (const int *) a;
+  const int *B = (const int *) b;
+
+  if (A[0] != B[0]) {
+    return A[0] - B[0];
+  }
+  if (A[1] != B[1]) {
+    return A[1] - B[1];
+  }
+  return B[2] - A[2];
+}
+
+static int
+p4est_neigh_insul_compare_2 (const void *a, const void *b)
+{
+  const int *A = (const int *) a;
+  const int *B = (const int *) b;
+
+  if (A[1] != B[1]) {
+    return A[1] - B[1];
+  }
+  if (A[2] != B[2]) {
+    return B[2] - A[2];
+  }
+  return A[0] - B[0];
+}
+
 static void
 p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
 {
@@ -1467,6 +1539,13 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
   sc_array_t overlap_insul_quads;
   sc_array_t *first_last_procs;
   sc_array_t *groups;
+  sc_array_t *first_send, *first_recv;
+  sc_array_t *last_send, *last_recv;
+  int min_tree_peer, max_tree_peer;
+  sc_array_t *peer_lt;
+  sc_array_t *peer_gt;
+  sc_array_t **tree_sched_lt;
+  sc_array_t **tree_sched_gt;
   int rank = p4est->mpirank;
 
   insul->p4est = p4est;
@@ -1505,7 +1584,6 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
                       (size_t) p4est->mpisize);
   sc_array_merge_offsets (&first_pos_array, first_last_quads,
                           offsets, p4est_quadrant_compare_piggy);
-  sc_array_destroy (first_last_quads);
 
   first_last_procs = sc_array_new_count (2 * sizeof (int), insul_quads->elem_count);
 
@@ -1528,8 +1606,9 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
     fl[idx % 2] = (int) off - 1;
   }
   sc_array_destroy (offsets);
+  sc_array_destroy (first_last_quads);
 
-  groups = sc_array_new_count (4 * sizeof (int), my_insul_count);
+  groups = sc_array_new_count (3 * sizeof (int), my_insul_count);
   sc_array_truncate (groups);
 
   for (z = 0; z < my_insul_count; z++) {
@@ -1540,18 +1619,15 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
     P4EST_ASSERT (fl[0] <= fl[1]);
     P4EST_ASSERT (fl[1] < p4est->mpisize);
     P4EST_ASSERT (fl[0] != rank || fl[1] != rank);
-    if (rank <= fl[0]) {
-      g[0] = rank;
+    if (fl[0] == fl[1]) {
+      g[0] = fl[0];
       g[1] = rank;
-      g[2] = fl[0];
-      g[3] = fl[1];
+      g[2] = rank;
     }
     else {
-      P4EST_ASSERT (fl[1] <= rank);
-      g[0] = fl[0];
-      g[1] = fl[1];
-      g[2] = rank;
-      g[3] = rank;
+      g[0] = rank;
+      g[1] = fl[0];
+      g[2] = fl[1];
     }
   }
 
@@ -1580,21 +1656,350 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
 
     g = (int *) sc_array_push (groups);
 
-    if (fl[1] <= fln[0]) {
-      g[0] = fl[0];
-      g[1] = fl[1];
-      g[2] = fln[0];
-      g[3] = fln[1];
+    g[0] = fl[0];
+    g[1] = fln[0];
+    g[2] = fln[1];
+  }
+
+  sc_array_sort (groups, p4est_neigh_insul_compare_1);
+#if 0
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group orig %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
+#endif
+#endif
+  { /* this pass eliminates subgroups where
+       the individuals are the same and the sets
+       are nested */
+    size_t ng = groups->elem_count;
+    size_t r = 0;
+    int *prev = NULL;
+
+    for (z = 0; z < ng; z++) {
+      int *g = (int *) sc_array_index (groups, z);
+
+      if (!z) {
+        prev = g;
+        r++;
+        continue;
+      }
+
+      P4EST_ASSERT (r <= z);
+
+      P4EST_ASSERT (g[0] >= prev[0]);
+      if (g[0] > prev[0] ||
+          g[1] < prev[1] ||
+          g[2] > prev[2]) {
+        int *gr = (int *) sc_array_index (groups, r++);
+
+        gr[0] = g[0];
+        gr[1] = g[1];
+        gr[2] = g[2];
+        prev = gr;
+      }
     }
-    else {
-      P4EST_ASSERT (fln[1] <= fl[0]);
-      g[0] = fln[0];
-      g[1] = fln[1];
-      g[2] = fl[0];
-      g[3] = fl[1];
+    groups->elem_count = r;
+  }
+
+#if 0
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group intermediate %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
+#endif
+#endif
+
+  sc_array_sort (groups, p4est_neigh_insul_compare_2);
+
+#if 0
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group intermediate resorted %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
+#endif
+#endif
+  { /* this pass eliminates subgroups where both components
+       of the subgroup are nested in the set component of the supergroup */
+    size_t ng = groups->elem_count;
+    size_t r;
+    int *prev = NULL;
+
+    z = 0;
+    r = 0;
+    while (z < ng) {
+      int *gr;
+
+      prev = (int *) sc_array_index (groups, z++);
+      gr = (int *) sc_array_index (groups, r++);
+      gr[0] = prev[0];
+      gr[1] = prev[1];
+      gr[2] = prev[2];
+      prev = gr;
+
+
+      P4EST_ASSERT (r <= z);
+
+      while (z < ng) {
+        int *g = (int *) sc_array_index (groups, z);
+
+        P4EST_ASSERT (g[1] >= prev[1]);
+        if (g[2] > prev[2]) { /* subinterval is not nested */
+          P4EST_ASSERT (g[1] >= prev[2]);
+          break;
+        }
+        P4EST_ASSERT (g[1] >= prev[1] && g[2] <= prev[2]);
+
+        if (g[0] < prev[1] || g[0] > prev[2]) { /* individual is not nested */
+          int *gr = (int *) sc_array_index (groups, r++);
+          gr[0] = g[0];
+          gr[1] = g[1];
+          gr[2] = g[2];
+        }
+        z++;
+      }
+    }
+    groups->elem_count = r;
+  }
+
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    if (g[1] == g[2]) {
+      int g0 = g[0];
+
+      g[0] = g[1];
+      g[1] = g0;
+      g[2] = g0;
     }
   }
 
+  sc_array_sort (groups, p4est_neigh_insul_compare_1);
+#if 0
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group orig %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
+#endif
+#endif
+  { /* this pass eliminates subgroups where
+       the individuals are the same and the sets
+       are nested */
+    size_t ng = groups->elem_count;
+    size_t r = 0;
+    int *prev = NULL;
+
+    for (z = 0; z < ng; z++) {
+      int *g = (int *) sc_array_index (groups, z);
+
+      if (!z) {
+        prev = g;
+        r++;
+        continue;
+      }
+
+      P4EST_ASSERT (r <= z);
+
+      P4EST_ASSERT (g[0] >= prev[0]);
+      if (g[0] > prev[0] ||
+          g[1] < prev[1] ||
+          g[2] > prev[2]) {
+        int *gr = (int *) sc_array_index (groups, r++);
+
+        gr[0] = g[0];
+        gr[1] = g[1];
+        gr[2] = g[2];
+        prev = gr;
+      }
+    }
+    groups->elem_count = r;
+  }
+
+#if 0
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group intermediate %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
+#endif
+#endif
+
+  sc_array_sort (groups, p4est_neigh_insul_compare_2);
+
+#if 0
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group intermediate resorted %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
+#endif
+#endif
+  { /* this pass eliminates subgroups where both components
+       of the subgroup are nested in the set component of the supergroup */
+    size_t ng = groups->elem_count;
+    size_t r;
+    int *prev = NULL;
+
+    z = 0;
+    r = 0;
+    while (z < ng) {
+      int *gr;
+
+      prev = (int *) sc_array_index (groups, z++);
+      gr = (int *) sc_array_index (groups, r++);
+      gr[0] = prev[0];
+      gr[1] = prev[1];
+      gr[2] = prev[2];
+      prev = gr;
+
+
+      P4EST_ASSERT (r <= z);
+
+      while (z < ng) {
+        int *g = (int *) sc_array_index (groups, z);
+
+        P4EST_ASSERT (g[1] >= prev[1]);
+        if (g[2] > prev[2]) { /* subinterval is not nested */
+          P4EST_ASSERT (g[1] >= prev[2]);
+          break;
+        }
+        P4EST_ASSERT (g[1] >= prev[1] && g[2] <= prev[2]);
+
+        if (g[0] < prev[1] || g[0] > prev[2]) { /* individual is not nested */
+          int *gr = (int *) sc_array_index (groups, r++);
+          gr[0] = g[0];
+          gr[1] = g[1];
+          gr[2] = g[2];
+        }
+        z++;
+      }
+    }
+    groups->elem_count = r;
+  }
+
+  first_send = sc_array_new (3 * sizeof (int));
+  first_recv = sc_array_new (sizeof (int));
+  last_send = sc_array_new (sizeof (int));
+  last_recv = sc_array_new (sizeof (int));
+  min_tree_peer = rank;
+  max_tree_peer = rank;
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_LDEBUGF ("group %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+    if (g[0] == rank) {
+      if (rank < g[1]) {
+        int *p = (int *) sc_array_push (first_send);
+
+        if (first_send->elem_count > 1 && p[-1] == g[1]) {
+          p[-1]--;
+        }
+        p[0] = g[1];
+        p[1] = g[1];
+        p[2] = g[2];
+        if (g[1] != g[2]) {
+          int *p = (int *) sc_array_push (last_recv);
+
+          *p = g[1];
+        }
+      }
+      else if (g[2] < rank) {
+        int *p = (int *) sc_array_push (first_send);
+
+        p[0] = g[2];
+        p[1] = g[1];
+        p[2] = g[2];
+        if (first_send->elem_count > 1 && p[-1] == g[1]) {
+          p[1]++;
+        }
+        if (g[1] != g[2]) {
+          int *p = (int *) sc_array_push (last_recv);
+
+          *p = g[2];
+        }
+      }
+      if (g[1] == g[2]) {
+        int *p = (int *) sc_array_push (first_recv);
+
+        *p = g[1];
+      }
+    }
+    else if (g[1] == rank && g[0] < rank) {
+      int *p = (int *) sc_array_push (first_recv);
+
+      *p = g[0];
+
+      P4EST_ASSERT (g[2] != rank);
+      p = (int *) sc_array_push (last_send);
+      *p = g[0];
+    }
+    else if (g[2] == rank && g[0] > rank) {
+      int *p = (int *) sc_array_push (first_recv);
+      *p = g[0];
+
+      P4EST_ASSERT (g[1] != rank);
+      p = (int *) sc_array_push (last_send);
+      *p = g[0];
+    }
+    if (g[1] <= rank && rank <= g[2]) {
+      min_tree_peer = SC_MIN (min_tree_peer, g[1]);
+      max_tree_peer = SC_MAX (max_tree_peer, g[2]);
+    }
+  }
+  peer_lt = sc_array_new_count (sizeof (int), SC_LOG2_32(rank - min_tree_peer) + 1);
+  peer_gt = sc_array_new_count (sizeof (int), SC_LOG2_32(max_tree_peer - rank) + 1);
+  {
+    for (z = 0; z < peer_lt->elem_count; z++) {
+      int *p = (int *) sc_array_index (peer_lt, z);
+      *p = rank - (1 << (peer_lt->elem_count - 1 - z));
+    }
+    for (z = 0; z < peer_gt->elem_count; z++) {
+      int *p = (int *) sc_array_index (peer_gt, z);
+      *p = rank + (1 << (peer_gt->elem_count - 1 - z));
+    }
+  }
+#if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < first_send->elem_count; z++) {
+    int *p = (int *) sc_array_index (first_send, z);
+
+    P4EST_ESSENTIALF ("first send to %d [%d, %d]\n", p[0], p[1], p[2]);
+  }
+  for (z = 0; z < first_recv->elem_count; z++) {
+    int *p = (int *) sc_array_index (first_recv, z);
+
+    P4EST_ESSENTIALF ("first recv from %d\n", p[0]);
+  }
+  P4EST_ESSENTIALF ("tree peers [%d, %d]\n", min_tree_peer, max_tree_peer);
+  for (z = 0; z < peer_lt->elem_count; z++) {
+    int *p = (int *) sc_array_index (peer_lt, z);
+
+    P4EST_ESSENTIALF ("lt peer %d\n", p[0]);
+  }
+  for (z = 0; z < peer_gt->elem_count; z++) {
+    int *p = (int *) sc_array_index (peer_gt, z);
+
+    P4EST_ESSENTIALF ("gt peer %d\n", p[0]);
+  }
+  for (z = 0; z < last_send->elem_count; z++) {
+    int *p = (int *) sc_array_index (last_send, z);
+
+    P4EST_ESSENTIALF ("last send to %d\n", p[0]);
+  }
+  for (z = 0; z < last_recv->elem_count; z++) {
+    int *p = (int *) sc_array_index (last_recv, z);
+
+    P4EST_ESSENTIALF ("last recv from %d\n", p[0]);
+  }
+#endif
+
+  sc_array_destroy (peer_lt);
+  sc_array_destroy (peer_gt);
+  sc_array_destroy (last_recv);
+  sc_array_destroy (last_send);
+  sc_array_destroy (first_recv);
+  sc_array_destroy (first_send);
   sc_array_destroy (groups);
   sc_array_destroy (first_last_procs);
   sc_array_destroy (insul_quads);
