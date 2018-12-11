@@ -1950,17 +1950,81 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
   }
   peer_lt = sc_array_new_count (sizeof (int), SC_LOG2_32(rank - min_tree_peer) + 1);
   peer_gt = sc_array_new_count (sizeof (int), SC_LOG2_32(max_tree_peer - rank) + 1);
+  tree_sched_lt = P4EST_ALLOC (sc_array_t *, peer_lt->elem_count);
+  tree_sched_gt = P4EST_ALLOC (sc_array_t *, peer_gt->elem_count);
   {
+    int prev_peer = -1;
     for (z = 0; z < peer_lt->elem_count; z++) {
       int *p = (int *) sc_array_index (peer_lt, z);
-      *p = rank - (1 << (peer_lt->elem_count - 1 - z));
+      int peer;
+
+      *p = peer = rank - (1 << (peer_lt->elem_count - 1 - z));
+      tree_sched_lt[z] = sc_array_new (2 * sizeof (int));
+
+      p = (int *) sc_array_push (tree_sched_lt[z]);
+      p[0] = SC_MAX (min_tree_peer, prev_peer + 1);
+      p[1] = peer;
+      prev_peer = peer;
     }
+    prev_peer = p4est->mpisize;
     for (z = 0; z < peer_gt->elem_count; z++) {
       int *p = (int *) sc_array_index (peer_gt, z);
-      *p = rank + (1 << (peer_gt->elem_count - 1 - z));
+      int peer;
+      *p = peer = rank + (1 << (peer_gt->elem_count - 1 - z));
+      tree_sched_gt[z] = sc_array_new (2 * sizeof (int));
+
+      p = (int *) sc_array_push (tree_sched_gt[z]);
+      p[0] = peer;
+      p[1] = SC_MIN (max_tree_peer, prev_peer - 1);
+      prev_peer = peer;
+    }
+  }
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+
+    if (g[0] >= g[1] && g[0] <= g[2]) {
+      continue;
+    }
+    if (g[0] != rank &&
+        ((g[0] < rank && g[1] != rank) ||
+         (g[0] > rank && g[2] != rank))) {
+      if (g[0] < rank) {
+        int this_min_peer = g[1];
+        int diff = rank - this_min_peer;
+        int *p;
+        size_t zz;
+
+        zz = SC_LOG2_32 (diff);
+
+        P4EST_ASSERT (zz < peer_lt->elem_count);
+        zz = peer_lt->elem_count - 1 - zz;
+        p = (int *) sc_array_push (tree_sched_lt[zz]);
+        p[0] = g[0];
+        p[1] = g[0];
+      }
+      else {
+        int this_max_peer = g[2];
+        int diff = this_max_peer - rank;
+        int *p;
+        size_t zz;
+
+        P4EST_ASSERT (g[0] > rank);
+
+        zz = SC_LOG2_32 (diff);
+
+        P4EST_ASSERT (zz < peer_gt->elem_count);
+        zz = peer_gt->elem_count - 1 - zz;
+        p = (int *) sc_array_push (tree_sched_gt[zz]);
+        p[0] = g[0];
+        p[1] = g[0];
+      }
     }
   }
 #if defined(P4EST_ENABLE_DEBUG)
+  for (z = 0; z < groups->elem_count; z++) {
+    int *g = (int *) sc_array_index (groups, z);
+    P4EST_ESSENTIALF ("group %d: %d [%d,%d]\n", (int) z, g[0], g[1], g[2]);
+  }
   for (z = 0; z < first_send->elem_count; z++) {
     int *p = (int *) sc_array_index (first_send, z);
 
@@ -1974,13 +2038,23 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
   P4EST_ESSENTIALF ("tree peers [%d, %d]\n", min_tree_peer, max_tree_peer);
   for (z = 0; z < peer_lt->elem_count; z++) {
     int *p = (int *) sc_array_index (peer_lt, z);
+    size_t zz;
 
     P4EST_ESSENTIALF ("lt peer %d\n", p[0]);
+    for (zz = 0; zz < tree_sched_lt[z]->elem_count; zz++) {
+      p = (int *) sc_array_index (tree_sched_lt[z], zz);
+      P4EST_ESSENTIALF ("[%d,%d]\n", p[0], p[1]);
+    }
   }
   for (z = 0; z < peer_gt->elem_count; z++) {
     int *p = (int *) sc_array_index (peer_gt, z);
+    size_t zz;
 
     P4EST_ESSENTIALF ("gt peer %d\n", p[0]);
+    for (zz = 0; zz < tree_sched_gt[z]->elem_count; zz++) {
+      p = (int *) sc_array_index (tree_sched_gt[z], zz);
+      P4EST_ESSENTIALF ("[%d,%d]\n", p[0], p[1]);
+    }
   }
   for (z = 0; z < last_send->elem_count; z++) {
     int *p = (int *) sc_array_index (last_send, z);
@@ -1994,6 +2068,14 @@ p4est_neigh_insul_setup (p4est_neigh_t *neigh, p4est_t *p4est)
   }
 #endif
 
+  for (z = 0; z < peer_gt->elem_count; z++) {
+    sc_array_destroy (tree_sched_gt[z]);
+  }
+  for (z = 0; z < peer_lt->elem_count; z++) {
+    sc_array_destroy (tree_sched_lt[z]);
+  }
+  P4EST_FREE (tree_sched_gt);
+  P4EST_FREE (tree_sched_lt);
   sc_array_destroy (peer_lt);
   sc_array_destroy (peer_gt);
   sc_array_destroy (last_recv);
