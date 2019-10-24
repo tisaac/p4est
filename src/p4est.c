@@ -416,6 +416,7 @@ p4est_new_ext (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
       sc_array_resize (tquadrants, (size_t) count);
       for (miu = 0; miu < count; ++miu) {
         quad = p4est_quadrant_array_index (tquadrants, (size_t) miu);
+        P4EST_QUADRANT_INIT (quad);
         p4est_quadrant_set_morton (quad, level, first_morton + miu);
         p4est_quadrant_init_data (p4est, jt, quad, init_fn);
       }
@@ -2850,6 +2851,10 @@ p4est_partition_for_coarsening (p4est_t * p4est,
 
     /* array index of send messages */
     parent_index = 0;
+
+    for (i = 0; i < num_sends; i++) {
+      P4EST_QUADRANT_INIT(&parent_send[i]);
+    }
 
     for (i = send_lowest; i <= send_highest; i++) {
       /* loop over all process candidates to send to */
